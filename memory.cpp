@@ -1,121 +1,70 @@
 #include <stdio.h>
 #include <memory.h>
-
-#define ERASABLE_BLK_SIZE   0400
-#define FIXED_BLK_SIZE      02000
-
-#define TOTAL_SIZE  (8 * ERASABLE_BLK_SIZE + 38 * FIXED_BLK_SIZE)
-
-typedef union {
-    struct {
-        __uint16_t  A;          // 00
-        __uint16_t  L;          // 01
-        __uint16_t  Q;          // 02
-        __uint16_t  EB;         // 03 "erasable bank register"
-        __uint16_t  FB;         // 04 "fixed bank register"
-        __uint16_t  Z;          // 05
-        __uint16_t  BB;         // 06
-        __uint16_t  _res;       // 07
-        __uint16_t  ARUPT;      // 10
-        __uint16_t  LRUPT;      // 11
-        __uint16_t  QRUPT;      // 12
-        __uint32_t  SAMPTIME;   // 13-14
-        __uint16_t  ZRUPT;      // 15
-        __uint16_t  BBRUPT;     // 16
-        __uint16_t  BRUPT;      // 17
-        __uint16_t  SYR;        // 20
-        __uint16_t  SR;         // 21
-        __uint16_t  CYL;        // 22
-        __uint16_t  EDOP;       // 23
-        __uint16_t  TIME2;      // 24
-        __uint16_t  TIME1;      // 25
-        __uint16_t  TIME3;      // 26
-        __uint16_t  TIME4;      // 27
-        __uint16_t  TIME5;      // 30
-        __uint16_t  TIME6;      // 31
-        __uint16_t  CDUX;       // 32
-        __uint16_t  CDUY;       // 33
-        __uint16_t  CDUZ;       // 34
-        __uint16_t  OPTY;       // 35
-        __uint16_t  OPTX;       // 36
-        __uint16_t  PIPAX;      // 37
-        __uint16_t  PIPAY;      // 40
-        __uint16_t  PIPAZ;      // 41
-        __uint16_t  Q_RHCCTR;   // 42
-        __uint16_t  P_RHCCTR;   // 43
-        __uint16_t  R_RHCCTR;   // 44
-        __uint16_t  INLINK;     // 45
-        __uint16_t  RNRAD;      // 46
-        __uint16_t  GYROCTR;    // 47
-        __uint16_t  CDUXCMD;    // 50
-        __uint16_t  CDUYCMD;    // 51
-        __uint16_t  CDUZCMD;    // 52
-        __uint16_t  OPTYCMD;    // 53
-        __uint16_t  OPTXCMD;    // 54
-        __uint16_t  THRUST;     // 55
-        __uint16_t  LEMONM;     // 56
-        __uint16_t  OUTLINK;    // 57
-        __uint16_t  ALTM;       // 60
-    };
-    __uint16_t  word[TOTAL_SIZE];
-}   Mem_t;
-
-class CMemory {
-    Mem_t   mem;
-    __uint16_t  FEB;
-public:
-    CMemory() {
-        memset(&mem, 0, sizeof(Mem_t));
-        FEB = 0;
-        for(int i=0; i<TOTAL_SIZE; i++)
-            mem.word[i] = i;
-        setEB(0);
-        setFB(0);    
-    }
-    void setEB(__uint16_t eb) {
-        mem.EB = eb;
-        mem.BB = mem.EB | mem.FB;
-    }
-    void setFB(__uint16_t eb) {
-        mem.FB = eb;
-        mem.BB = mem.EB | mem.FB;
-    }
-    __uint16_t  read(__uint16_t addr) {
-        __uint16_t  _addr = 0;
-        if( addr < 01400) {
-            // Unswitched erasable memory
-            _addr = addr;
-        } else if( addr < 02000) {
-            // Switched erasable memory
-            if( mem.EB & ~03400 ) {
-                printf("Invalid EB: %05o!\n", mem.EB);
-                return 0;
-            }
-            _addr = addr-01400 + mem.EB;
-        } else if( addr < 04000) {
-            // Switched fixed memory
-            __int16_t   bank = mem.FB;
-            if( bank > 027 && FEB == 1 )
-                bank += 010;
-            if( bank > 033 ) {
-                printf("Invalid bank: %03o!\n", bank);
-                return 0;
-            }
-            _addr = addr + bank*FIXED_BLK_SIZE;
-        } else if( addr < 010000) {
-            // Unswitched fixed memory
-            _addr = addr;
-        } else {
-            printf("Invalid address: %06o!\n", addr);
-            return 0;
-        }
-        printf("Addr: %06o -> mem[%05o] : %05o\n", addr, _addr, mem.word[_addr]);
-        return mem.word[_addr];
-    }
-};
+#include "memory.h"
 
 
+void CMemory::init(void) {
+#if 0
+    write(04000, 000004);
+    write(04001, 034054);
+    write(04002, 056006);
+    write(04003, 012667);
+//006302,000092:    4054  E3,1400                                  EBANK=   LST1                                  #  RESTART USES E0, E3
+//006303,000093:    4054           12103        GOBB               BBCON    GOPROG      
+    write(04054, 012103);
+/*
+008764,000212: 05,2667  E3,1400                                  EBANK=   LST1                                  
+008765,000213: 05,2667           24320        GOPROG             INCR     REDOCTR                               #  ADVANCE RESTART COUNTER.
+008766,000214: 
+008767,000215: 05,2670           22002                           LXCH     Q                                     
+008768,000216: 05,2671           00006                           EXTEND                                         
+008769,000217: 05,2672           04007                           ROR      SUPERBNK                              
+008770,000218: 05,2673           53433                           DXCH     RSBBQ                                 
+008771,000219: 05,2674           31036                           CA       DSPTAB     +11D                       
+008772,000220: 05,2675           74750                           MASK     BIT4                                  
+008773,000221: 05,2676           00006                           EXTEND                                         
+008774,000222: 05,2677           12703                           BZF      +4                                    
+008775,000223: 05,2700           64746                           AD       BIT6                                  #  SET ERROR COUNTER ENABLE
+008776,000224: 05,2701           00006                           EXTEND                                         
+008777,000225: 05,2702           05012                           WOR      CHAN12                                #  ISS WAS IN COARS ALIGN SO GO BACK TO
+008778,000226: 05,2703           03070        BUTTONS            TC       LIGHTSET        
+*/
+    writeBank(05,02667, 024320); //        GOPROG             INCR     REDOCTR                               #  ADVANCE RESTART COUNTER.
+    writeBank(05,02670, 022002); //                           LXCH     Q                                     
+    writeBank(05,02671, 000006); //                           EXTEND                                         
+    writeBank(05,02672, 004007); //                           ROR      SUPERBNK                              
+    writeBank(05,02673, 053433); //                           DXCH     RSBBQ                                 
+    writeBank(05,02674, 031036); //                           CA       DSPTAB     +11D                       
+    writeBank(05,02675, 074750); //                           MASK     BIT4                                  
+    writeBank(05,02676, 000006); //                           EXTEND                                         
+    writeBank(05,02677, 012703); //                           BZF      +4                                    
+    writeBank(05,02700, 064746); //                           AD       BIT6                                  #  SET ERROR COUNTER ENABLE
+    writeBank(05,02701, 000006); //                           EXTEND                                         
+    writeBank(05,02702, 005012); //                           WOR      CHAN12                                #  ISS WAS IN COARS ALIGN SO GO BACK TO
+    writeBank(05,02703, 003070); //        BUTTONS            TC       LIGHTSET
 
+    writeBank(05,03070, 034747); //        LIGHTSET           CAF      BIT5                                  #  CHECK FOR MARK REJECT AND ERROR RESET
+    writeBank(05,03071, 000006); //                           EXTEND                                         
+    writeBank(05,03072, 002016); //                           RAND     NAVKEYIN                              
+    writeBank(05,03073, 000006); //                           EXTEND                                         
+    writeBank(05,03074, 013102); //                           BZF      NONAVKEY                              #  NO MARK REJECT
+    writeBank(05,03075, 000006); //                           EXTEND                                         
+    writeBank(05,03076, 000015); //                           READ     MNKEYIN                               #  CHECK IF KEYS 2M AND 5M ON
+    writeBank(05,03077, 063361); //                           AD       -ELR                                  #  MAIN DSKY KEYCODE (BITS 1-5)
+    writeBank(05,03100, 000006); //                           EXTEND                                         
+    writeBank(05,03101, 013103); //                           BZF      +2                                    
+    writeBank(05,03102, 000002); //        NONAVKEY           TC       Q                                     
+    writeBank(05,03103, 003107); //                           TC       STARTSUB                              
+    writeBank(05,03104, 012474); //                           TCF      DOFSTART                              
+    writeBank(05,03105, 003107); //                 +3        TC       STARTSUB                              
+    writeBank(05,03106, 012501); //                           TCF      DOFSTRT1                              #  DO FRESH START BUT DON'T TOUCH ENGINE    
+#endif
+}
+void CMemory::writeBank(__uint8_t bank, __uint16_t addr, __uint16_t data) {
+    __uint16_t _addr = bank * FIXED_BLK_SIZE + addr;
+    write(_addr, data);
+}
+/*
 int main(int argc, char *argv[])
 {
     CMemory mem;
@@ -127,6 +76,7 @@ int main(int argc, char *argv[])
     mem.setEB(02000);
     mem.read(01400);
     mem.setEB(03400);
-    mem.read(01400);
+    mem.read(01401);
     return 0;
 }
+*/
