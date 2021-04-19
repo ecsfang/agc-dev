@@ -64,16 +64,18 @@ void CAgc::readCore(char *core)
         if( buf[0] >= '0' && buf[0] < '8') {
             char *p = buf;
             unsigned int word;
-            while( sscanf(p, "%o", &word) == 1 ) {
+            p = strtok(buf, ", ");
+            while( p && sscanf(p, "%o", &word) == 1 ) {
                 printf("%02o,%04o [%06o] : %05o\n", bank, addr-(010000 + bank * FIXED_BLK_SIZE), addr, word);
-                p += 6;
+                p = strtok(NULL, ", "); //+= 6;
                 mem.write(addr++, word);
             }
 //            printf("\n");
         }
     }
-    printf("Start: [%06o] : %05o\n", 04000, mem.read(04000));
-    mem.setZ(04000);
+    mem.setFB(020 * FIXED_BLK_SIZE);
+    mem.setZ(02101);
+    printf("Start: [%06o](%06o) : %05o\n", mem.getZ(), mem.addr2mem(mem.getZ()), mem.getOP());
     fclose(fp);
 }
 
@@ -168,6 +170,32 @@ int CAgc::op1ex(__uint16_t opc)
     return ret;
 }
 
+int CAgc::op2ex(__uint16_t opc)
+{
+    int ret = -1;
+    __uint16_t  q, x;
+    // The "Transfer Control to Fixed" instruction jumps to a
+    // memory location in fixed (as opposed to erasable) memory.
+    __uint16_t k = opc & MASK_10B_ADDRESS;
+    switch((opc & QC_MASK) >> 10) {
+    case 01:
+        q = mem.getQ();
+        x = mem.read(k);
+        mem.write(k,q);
+        mem.setQ(x);
+        printf("QXCH %04o\n", k);
+        ret = 0;
+        break;
+    case 02:
+        printf("AUG %04o\n", k);
+        break;
+    case 03:
+        printf("DIM %04o\n", k);
+        break;
+    }
+    return ret;
+}
+
 
 //******************************************************************
 
@@ -175,6 +203,7 @@ int CAgc::op0(__uint16_t opc)
 {
     int ret = -1;
     switch(opc) {
+/*
         case 000000:
             printf("XXALQ\n");
             //ret = 0;
@@ -183,6 +212,7 @@ int CAgc::op0(__uint16_t opc)
             printf("XLQ\n");
             //ret = 0;
             break;
+*/
         case 000002:
             printf("RETURN\n");
             mem.setZ(mem.getQ());
@@ -206,7 +236,7 @@ int CAgc::op0(__uint16_t opc)
             break;
         default:
             {
-                __uint16_t k = opc & 07777;
+                __uint16_t k = opc & MASK_12B_ADDRESS;
                 mem.setQ(mem.getZ() + 1);   // Set return address
                 mem.setZ(k);
                 printf("TC %05o\n", k);
@@ -219,21 +249,49 @@ int CAgc::op0(__uint16_t opc)
 
 int CAgc::op1(__uint16_t opc)
 {
-    // The "Transfer Control to Fixed" instruction jumps to a
-    // memory location in fixed (as opposed to erasable) memory.
-    __uint16_t k = opc & 07777;
-    mem.setZ(k);
-    printf("TCF %05o\n", mem.getZ());
-    bStep = false;
+    __uint16_t qc = opc & QC_MASK;
+    if( qc ) {
+        // The "Transfer Control to Fixed" instruction jumps to a
+        // memory location in fixed (as opposed to erasable) memory.
+        __uint16_t k = opc & MASK_12B_ADDRESS;
+        mem.setZ(k);
+        printf("TCF %05o\n", mem.getZ());
+        bStep = false;
+    } else {
+        // If (K) > 0, then we take the instruction at I + 1, and (A) will be reduced
+        // by 1, i.e. (K) - 1. If (K) = + 0, we take the instruction at I + 2, and (A) will
+        // be set to +O. If (K) < -0, we take the instruction at I + 3, and (A) will be set
+        // to its absolute value less 1. If (K) = -0, we take the instruction at I + 4, and
+        // (A) will be set to + 0. CCS always leaves a positive quantity in A. 
+        __uint16_t k = opc & MASK_10B_ADDRESS;
+        printf("CCS %04o\n", k);
+        __uint16_t  m = mem.read12(k);
+        if( m > 0 && !(k & 040000) ) {
+            mem.setA(k-1);
+        } else if( m == 0 ) {
+            mem.setA(0);
+            mem.setZ(mem.getZ() + 1);
+        } else if( m == NEG_ZERO ) {
+            mem.setA(0);
+            mem.setZ(mem.getZ() + 3);
+        } else {
+            mem.setA(mem.getA()-1); // TBD
+            mem.setZ(mem.getZ() + 2);
+        }
+        bStep = true;
+    }
     return 0;
 }
 
 int CAgc::op2(__uint16_t opc)
 {
     int ret = -1;
-    __uint16_t a, l, x, k10 = opc & 01777;
-    switch(opc & 076000) {
-        case 022000:
+    __uint16_t a, l, x, k10 = opc & MASK_10B_ADDRESS;
+    switch((opc & QC_MASK) >> 10) {
+        case 00:
+            printf("DAS %04o! TBD!\n", k10);
+            break;
+        case 01:
             l = mem.read(1);
             x = mem.read12(k10);
             mem.write12(k10,l);
@@ -241,10 +299,17 @@ int CAgc::op2(__uint16_t opc)
             printf("LXCH %05o[%05o] (%05o<->%05o)\n", mem.addr2mem(k10), k10, l, x);
             ret = 0;
             break;
-        case 024000:
+        case 02:
             x = mem.read12(k10);
             mem.write12(k10,x+1);
             printf("INCR %05o[%05o] (%05o->%05o)\n", mem.addr2mem(k10), k10, x, mem.read12(k10));
+            ret = 0;
+            break;
+        case 03:
+            a = mem.getA();
+            x = mem.read12(k10);
+            mem.setA(a + x);
+            printf("ADS %04o[%05o] (%05o + %05o)\n", mem.addr2mem(k10), k10, a, x);
             ret = 0;
             break;
         default:
@@ -257,9 +322,12 @@ int CAgc::op3(__uint16_t opc)
 {
     // The "Clear and Add" (or "Clear and Add Erasable" or "Clear and Add Fixed") instruction moves
     // the contents of a memory location into the accumulator.
-    __uint16_t k = opc & 07777;
+    __uint16_t k = opc & MASK_12B_ADDRESS;
     mem.write(0, mem.read12(k));
-    printf("CAF %04o (%05o -> A)\n", mem.read12(k), mem.read(0));
+    if( (opc & QC_MASK) == 0 )
+        printf("CAE %04o (%05o -> A)\n", mem.read12(k), mem.read(0));
+    else
+        printf("CAF %04o (%05o -> A)\n", mem.read12(k), mem.read(0));
     return 0;
 }
 
@@ -267,7 +335,7 @@ int CAgc::op4(__uint16_t opc)
 {
     // The "Clear and Add" (or "Clear and Add Erasable" or "Clear and Add Fixed") instruction moves
     // the contents of a memory location into the accumulator.
-    __uint16_t k = opc & 07777;
+    __uint16_t k = opc & MASK_12B_ADDRESS;
     mem.write(0, ~mem.read12(k));
     printf("CS %04o (%05o -> A)\n", ~mem.read12(k), mem.read(0));
     return 0;
@@ -277,8 +345,8 @@ int CAgc::op5(__uint16_t opc)
 {
     int ret = -1;
     __uint16_t a, l, x, x1, k10 = opc & MASK_10B_ADDRESS;
-    switch(opc & 076000) {
-        case 052000: // swap [k-1,k] and [a,l]
+    switch((opc & QC_MASK) >> 10) {
+        case 01: // swap [k-1,k] and [a,l]
             x = mem.read12(k10-1);
             x1 = mem.read12(k10);
             a = mem.read(0);
@@ -295,7 +363,7 @@ int CAgc::op5(__uint16_t opc)
                 printf("DXCH %05o\n", k10-1);
             ret = 0;
             break;
-        case 054000:
+        case 02:
             a = mem.read(0);
             mem.write12(k10,a);
             if( opc == 054000 )
@@ -306,13 +374,17 @@ int CAgc::op5(__uint16_t opc)
                 printf("TS %04o\n", k10);
             ret = 0;
             break;
-        case 056000:
+        case 03:
             a = mem.read(0);
             x = mem.read12(k10);
             mem.write(0,x);
             mem.write12(k10,a);
             printf("XCF A[%05o] <-> %04o[%05o]\n", a, k10, x);
             ret = 0;
+            break;
+        case 00:
+            printf("INDEX\n");
+            //ret = 0;
             break;
         default:
             printf("Unknown opcode %05o!\n", opc);
@@ -353,19 +425,19 @@ int CAgc::sst(void)
     bStep = true;
     if( bExtracode ) {
         printf("[%04o(%06o)] %05o # ", mem.getZ(), mem.getPysZ(), op);
-        switch( op & 070000 ) {
+        switch( op & OPCODE_MASK ) {
             case 000000: ret = op0ex(op); break;
             case 010000: ret = op1ex(op); break;
-//            case 020000: ret = op2ex(op); break;
+            case 020000: ret = op2ex(op); break;
 //            case 030000: ret = op3ex(op); break;
 //            case 050000: ret = op5ex(op); break;
             default:
-                printf("Unknown opcode %05o!\n", op);
+                printf("Unknown extra code %05o!\n", op);
         }
         bExtracode = false;
     } else {
         printf("\n[%04o(%06o)] %05o > ", mem.getZ(), mem.getPysZ(), op);
-        switch( op & 070000 ) {
+        switch( op & OPCODE_MASK ) {
             case 000000: ret = op0(op); break;
             case 010000: ret = op1(op); break;
             case 020000: ret = op2(op); break;
@@ -402,7 +474,7 @@ int main(int argc, char *argv[])
 
     __uint16_t op = cpu.getOP();
     printf("OP: %06o\n", op);
-    int n = 500;
+    int n = 50;
     while( cpu.sst() == 0 && n--) {
         cpu.dispReg();
     }

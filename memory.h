@@ -8,6 +8,9 @@
 #define MASK_10B_ADDRESS    01777
 #define MASK_IO_ADDRESS     00777
 
+#define OPCODE_MASK         070000  // Bit 13, 14 and 15
+#define QC_MASK             006000  // Bit 11 and 12
+
 #define NEG_ZERO    077777
 #define ERR_ADDR    0xFFFF
 
@@ -112,7 +115,7 @@ public:
         setFB(0);    
     }
     __uint16_t getOP(void) {
-        return read12(mem.Z & 07777);
+        return read12(mem.Z & MASK_12B_ADDRESS);
     }
     void setZ(__uint16_t pc) {
         mem.Z = pc;
