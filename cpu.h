@@ -4,6 +4,8 @@
 #include <ncurses.h>
 #include "memory.h"
 
+extern FILE *logFile;
+
 class CCpu {
     CMemory mem;
     bool bExtracode = false;
@@ -48,19 +50,27 @@ public:
     {
         s2 = x1 & 0x4000;
         __uint16_t s = x1 + x2;
+        __uint16_t cs;
 
         if( s & 0x8000 )
             s++;
         bOF = s2 != (s & 0x4000);
+        cs = s;
         //printf("(s2:%d s1:%d of:%d)", s2 ? 1:0, (s&0x4000)?1:0, );
         if( bOF ) {
             // Overflow correction
-            s &= 0x3FFF;
-            s |= s2 ? 0x4000 : 0;
+            cs &= 0x3FFF;
+            cs |= s2 ? 0x4000 : 0;
         }
+        fprintf(logFile,"1stADD: %05o + %05o = %05o %c [%05o] (S2:%d S1:%d)\n", x1, x2, s, bOF?'*':' ', cs, s2&0x4000?1:0, s&0x4000?1:0);
+        fflush(logFile);
         return s & 0x7FFF;
     }
-
+    void setA(uint16_t a) {
+        mem.setA(a);
+        s2 = a & 0x4000;
+        bOF = false;
+    }
     uint16_t getPC(void) {
         return mem.getZ();
     }

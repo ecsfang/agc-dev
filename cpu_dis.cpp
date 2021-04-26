@@ -255,6 +255,8 @@ int CCpu::sst(void)
     __uint16_t op = getOP();
     bStep = true;
 
+    fprintf(logFile,"OP: %05o\n", opc);
+
     if( bExtracode ) {
         mvprintw(19,0,"EXTRA CODE!");
         switch( op & OPCODE_MASK ) {

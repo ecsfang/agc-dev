@@ -13,8 +13,10 @@
 #define OPCODE_MASK         070000  // Bit 13, 14 and 15
 #define QC_MASK             006000  // Bit 11 and 12
 
-#define NEG_ZERO    077777
 #define ERR_ADDR    0xFFFF
+
+#define POS_ZERO    000000
+#define NEG_ZERO    077777
 #define POS_ONE     000001
 #define NEG_ONE     077776
 

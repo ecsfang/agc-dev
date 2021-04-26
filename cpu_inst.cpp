@@ -78,7 +78,8 @@ void CCpu::readCore(char *core)
     }
     mem.setFB(0); //020 * FIXED_BLK_SIZE);
     mem.setZ(04000);
-    printf("Start: [%06o](%06o) : %05o\n", mem.getZ(), mem.addr2mem(mem.getZ()), mem.getOP());
+    fprintf(logFile, "Start: [%06o](%06o) : %05o\n", mem.getZ(), mem.addr2mem(mem.getZ()), mem.getOP());
+    fflush(logFile);
     fclose(fp);
 }
 
@@ -90,7 +91,7 @@ int CCpu::op0ex(void)
     switch (opc & 077000) {
     case 000000:
         io = mem.readIO(kc);
-        mem.write(0, io);
+        setA(io);
         ret = 0;
         break;
     case 001000:
@@ -99,34 +100,35 @@ int CCpu::op0ex(void)
         break;
     case 002000:
         io = mem.readIO(kc);
-        mem.write(0, io & mem.read(0));
+        setA(io & mem.read(0));
         ret = 0;
         break;
     case 003000:
         io = mem.readIO(kc);
-        mem.write(0, io & mem.read(0));
+        setA(io & mem.read(0));
         mem.writeIO(kc, mem.read(0));
         ret = 0;
         break;
     case 004000:
         io = mem.readIO(kc);
-        mem.write(0, io | mem.read(0));
+        setA(io | mem.read(0));
         ret = 0;
         break;
     case 005000:
         io = mem.readIO(kc);
-        mem.write(0, io | mem.read(0));
+        setA(io | mem.read(0));
         mem.writeIO(kc, mem.read(0));
         ret = 0;
         break;
     case 006000:
         io = mem.readIO(kc);
-        mem.write(0, io ^ mem.read(0));
+        setA(io ^ mem.read(0));
         mem.writeIO(kc, mem.read(0));
         ret = 0;
         break;
     default:
-        printf("Unknown opcode %05o!\n", opc);
+        fprintf(logFile,"Unknown opcode %05o!\n", opc);
+        fflush(logFile);
     }
     return ret;
 }
@@ -154,7 +156,8 @@ int CCpu::op2ex(void)
 {
     int ret = -1;
     __uint16_t  q, x;
-    mvprintw(19,0,"OP2EX");
+    fprintf(logFile,"OP2EX ");
+    fflush(logFile);
     // The "Transfer Control to Fixed" instruction jumps to a
     // memory location in fixed (as opposed to erasable) memory.
     switch( qc ) {
@@ -163,7 +166,8 @@ int CCpu::op2ex(void)
         x = mem.read(k10);
         mem.write(k10,q);
         mem.setQ(x);
-        mvprintw(18,0,"%5o <-> %05o", q, x);
+        fprintf(logFile,"%5o <-> %05o\n", q, x);
+        fflush(logFile);
         ret = 0;
         break;
     case 02:
@@ -222,17 +226,17 @@ int CCpu::op1(void)
         // to its absolute value less 1. If (K) = -0, we take the instruction at I + 4, and
         // (A) will be set to + 0. CCS always leaves a positive quantity in A. 
         m = mem.read(k10);
-        if( m > 0 && IS_POS(m) ) {
-            mem.setA(m-1);
-        } else if( m == 0 ) {
-            mem.setA(0);
+        if( m > POS_ZERO && IS_POS(m) ) {
+            setA(m-1);
+        } else if( m == POS_ZERO ) {
+            setA(POS_ZERO);
             mem.setZ(mem.getZ() + 1);
         } else if( m == NEG_ZERO ) {
-            mem.setA(0);
+            setA(POS_ZERO);
             mem.setZ(mem.getZ() + 3);
         } else {
             // Is negative ...
-            mem.setA(((~mem.getA()) & 0x7FFF) - 1); // TBD
+            setA(((~mem.getA()) & NEG_ZERO) - 1); // TBD
             mem.setZ(mem.getZ() + 2);
         }
         //bStep = true;
@@ -279,12 +283,13 @@ int CCpu::op2(void)
         a = mem.getA();
         x1 = mem.read(k10);
         a += x1;
-        mem.setA(a);
+        setA(a);
         mem.write(k10,a);
         ret = 0;
         break;
     default:
-        printf("Unknown opcode %05o!\n", opc);
+        fprintf(logFile,"Unknown opcode %05o!\n", opc);
+        fflush(logFile);
     }
     return ret;
 }
@@ -293,7 +298,7 @@ int CCpu::op3(void)
 {
     // The "Clear and Add" (or "Clear and Add Erasable" or "Clear and Add Fixed") instruction moves
     // the contents of a memory location into the accumulator.
-    mem.setA(mem.read12(k12));
+    setA(mem.read12(k12));
     return 0;
 }
 
@@ -301,8 +306,7 @@ int CCpu::op4(void)
 {
     // The "Clear and Add" (or "Clear and Add Erasable" or "Clear and Add Fixed") instruction moves
     // the contents of a memory location into the accumulator.
-    mem.setA((~mem.read12(k12)) & NEG_ZERO);
-    s2 = s2 ? 0 : 0x4000;
+    setA((~mem.read12(k12)) & NEG_ZERO);
     return 0;
 }
 
@@ -328,7 +332,7 @@ int CCpu::op5(void)
         if( OF() ) {
             mem.write(k10,(a & 0x3FFF) | s2);
             mem.setZ(mem.getZ() + 1);   // Overflow - skip one line!
-            mem.setA(s2 ? NEG_ONE : POS_ONE);
+            setA(s2 ? NEG_ONE : POS_ONE);
         } else {
             mem.write(k10,a);
         }
@@ -346,7 +350,8 @@ int CCpu::op5(void)
         ret = 0;
         break;
     default:
-        printf("Unknown opcode %05o!\n", opc);
+        fprintf(logFile,"Unknown opcode %05o!\n", opc);
+        fflush(logFile);
     }
     return ret;
 }
@@ -357,6 +362,8 @@ int CCpu::op6(void)
     __uint16_t m = mem.read12(k12);
     __uint16_t a = mem.getA();
     
+    fprintf(logFile, "OP6!\n");
+
     // AD - add and update overflow
     mem.write(0, add1st(a, m));
     // Note! Rewrite K!
@@ -371,7 +378,7 @@ int CCpu::op7(void)
     __uint16_t m = mem.read12(k12);
     __uint16_t a = mem.getA();
     
-    mem.write(0, a & m);
+    setA(a & m);
     ret = 0;
     return ret;
 }

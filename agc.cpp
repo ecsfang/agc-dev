@@ -4,6 +4,8 @@
 
 #include <ncurses.h>
 
+FILE    *logFile=NULL;
+
 //#include <unistd.h>
 //#include <termios.h>
 
@@ -74,7 +76,7 @@ int main(int argc, char *argv[])
 void prtBin(__uint16_t x)
 {
     for(int b=14; b>=0; b--) {
-        printf("%c", x & (1<<b) ? '1' : '0');
+        fprintf(logFile, "%c", x & (1<<b) ? '1' : '0');
     }
 }
 void prt1st(__uint16_t x)
@@ -84,10 +86,11 @@ void prt1st(__uint16_t x)
 
     if( bNeg )
         d = ((~x) & 0x7FFF);
-    printf("%05o (%d ", x & 0x7FFF, x & 0x8000 ? 1 : 0); prtBin(x);
-    printf(") [%c", bNeg ? '-' : '+');
-    printf("%5d]", d);
+    fprintf(logFile, "%05o (%d ", x & 0x7FFF, x & 0x8000 ? 1 : 0); prtBin(x);
+    fprintf(logFile, ") [%c", bNeg ? '-' : '+');
+    fprintf(logFile, "%5d]", d);
 }
+/*
 __uint16_t add1st(__uint16_t x1, __uint16_t x2, bool *bOF)
 {
     __uint16_t s2 = (x1 & 0x4000) << 1;
@@ -101,17 +104,21 @@ __uint16_t add1st(__uint16_t x1, __uint16_t x2, bool *bOF)
         s &= 0x3FFF;
         s |= s2 ? 0x4000 : 0;
     }
+    fprintf(logFile,"1stADD: %05o + %05o = %05o (S1:%d S2:%d)\n", x1, x2, s, s&0x4000?1:0, s2&0x8000?1:0);
+    fflush(logFile);
     return (s & 0x7FFF) | s2;
-}
+}***/
+
 void testAdd(__uint16_t x1, __uint16_t x2)
 {
+    CCpu    tst;
     bool of;
-    printf("\n  "); prt1st(x1);
-    printf(")\n  "); prt1st(x2);
-    printf(")\n-------------------------------\n+ "); prt1st(add1st(x1,x2, &of));
+    fprintf(logFile, "\n  "); prt1st(x1);
+    fprintf(logFile, ")\n  "); prt1st(x2);
+    fprintf(logFile, ")\n-------------------------------\n+ "); prt1st(tst.add1st(x1,x2));
     if( of )
-        printf("Overflow!");
-    printf("\n");
+        fprintf(logFile, "Overflow!");
+    fprintf(logFile, "\n");
 }
 void test1st(void)
 {
@@ -123,18 +130,27 @@ void test1st(void)
     testAdd(054000, 050000);
     testAdd(14908, 8265);
     testAdd(037777, 040000);
+    testAdd(040000, 037777);
+    testAdd(037777, 000001);
+    testAdd(000001, 037777);
+    testAdd(040000, 040000);
 }
+
 
 int main(int argc, char *argv[])
 {
+    logFile = fopen("agc.log", "w");
 #ifdef DO_TEST
     test1st();
 #else
+
     CCpu    cpu;
     int n = 0;
     char key;
     cpu.readCore(argv[1]);
     bool bRunning = false;
+    fprintf(logFile,"Starting!\n");
+
     WINDOW *myWindow = initscr();			/* Start curses mode 		  */
     noecho();
     do {
