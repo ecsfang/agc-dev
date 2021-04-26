@@ -1,6 +1,8 @@
 #ifndef __MEMORY_H__
 #define __MEMORY_H__
 
+#include <memory.h>
+
 #define ERASABLE_BLK_SIZE   0400
 #define FIXED_BLK_SIZE      02000
 
@@ -13,6 +15,8 @@
 
 #define NEG_ZERO    077777
 #define ERR_ADDR    0xFFFF
+#define POS_ONE     000001
+#define NEG_ONE     077776
 
 #define TOTAL_SIZE  (8 * ERASABLE_BLK_SIZE + 38 * FIXED_BLK_SIZE)
 
@@ -114,8 +118,8 @@ public:
         setEB(0);
         setFB(0);    
     }
-    __uint16_t getOP(void) {
-        return read12(mem.Z & MASK_12B_ADDRESS);
+    __uint16_t getOP(int offs = 0) {
+        return read12((mem.Z+offs) & MASK_12B_ADDRESS);
     }
     void setZ(__uint16_t pc) {
         mem.Z = pc;
@@ -165,6 +169,7 @@ public:
                 default:
                     if( addr >= 04000 && addr < 010000 )
                         addr += 010000;
+                    //printf("mem[%05o] = %05o\n", addr, data);
                     mem.word[addr] = data;
             }
         }

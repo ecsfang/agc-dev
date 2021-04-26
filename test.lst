@@ -1,0 +1,926 @@
+Apollo Guidance Computer (AGC) assembler, version 2020-12-24, built Apr 21 2021, target BLK2
+(c)2003-2005,2009-2010,2016-2018 Ronald S. Burkey
+Refer to http://www.ibiblio.org/apollo/index.html for more information.
+Pass #1
+Pass #2
+Pass #3
+000001,000001:                                                                                          	# Definitions of various registers.
+000002,000002: ???????                        A                  EQUALS   0                             	#
+000003,000003: ???????                        L                  EQUALS   1                             	#  L AND Q ARE BOTH CHANNELS AND REGISTERS.
+000004,000004: ???????                        Q                  EQUALS   2                             	#
+000005,000005: ???????                        ARUPT              EQUALS   10                            	#
+000006,000006: ???????                        QRUPT              EQUALS   12                            	#
+000007,000007: ???????                        TIME3              EQUALS   26                            	#
+000008,000008: ???????                        NEWJOB             EQUALS   67                            	# Location checked by the Night Watchman.
+000009,000009: ???????                        OVFCNTR            EQUALS   00034                         	# overflow counter
+000010,000010: 
+000011,000011:    4000                                           SETLOC   4000                          	# The interrupt-vector table.
+000012,000012: 
+000013,000013:                                                                                          	# Come here at power-up or GOJAM
+000014,000014:    4000           00004                           INHINT                                 	# Disable interrupts for a moment.
+000015,000015:                                                                                          	# Set up the TIME3 interrupt, T3RUPT.  TIME3 is a 15-bit
+000016,000016:                                                                                          	# register at address 026, which automatically increments every
+000017,000017:                                                                                          	# 10 ms, and a T3RUPT interrupt occurs when the timer
+000018,000018:                                                                                          	# overflows.  Thus if it is initially loaded with 037774,
+000019,000019:                                                                                          	# and overflows when it hits 040000, then it will
+000020,000020:                                                                                          	# interrupt after 40 ms.
+000021,000021:    4001           34066                           CA       O37774                        	#
+000022,000022:    4002           54026                           TS       TIME3                         	#
+000023,000023:                                                                                          	#            TCF       STARTUP    # Go to your "real" code.
+000024,000024:    4003           14067                           TCF      goMAIN                        	# Go to your "test" code.
+000025,000025: 
+000026,000026:    4004           50017                           RESUME                                 	# T6RUPT
+000027,000027:    4005           14006                           NOOP                                   	#
+000028,000028:    4006           14007                           NOOP                                   	#
+000029,000029:    4007           14010                           NOOP                                   	#
+000030,000030: 
+000031,000031:    4010           50017                           RESUME                                 	# T5RUPT
+000032,000032:    4011           14012                           NOOP                                   	#
+000033,000033:    4012           14013                           NOOP                                   	#
+000034,000034:    4013           14014                           NOOP                                   	#
+000035,000035: 
+000036,000036:    4014           52011                           DXCH     ARUPT                         	# T3RUPT
+000037,000037:    4015           00006                           EXTEND                                 	# Back up A, L, and Q registers
+000038,000038:    4016           22012                           QXCH     QRUPT                         	#
+000039,000039:    4017           14054                           TCF      T3RUPT                        	#
+000040,000040: 
+000041,000041:    4020           50017                           RESUME                                 	# T4RUPT
+000042,000042:    4021           14022                           NOOP                                   	#
+000043,000043:    4022           14023                           NOOP                                   	#
+000044,000044:    4023           14024                           NOOP                                   	#
+000045,000045: 
+000046,000046:    4024           50017                           RESUME                                 	# KEYRUPT1
+000047,000047:    4025           14026                           NOOP                                   	#
+000048,000048:    4026           14027                           NOOP                                   	#
+000049,000049:    4027           14030                           NOOP                                   	#
+000050,000050: 
+000051,000051:    4030           50017                           RESUME                                 	# KEYRUPT2
+000052,000052:    4031           14032                           NOOP                                   	#
+000053,000053:    4032           14033                           NOOP                                   	#
+000054,000054:    4033           14034                           NOOP                                   	#
+000055,000055: 
+000056,000056:    4034           50017                           RESUME                                 	# UPRUPT
+000057,000057:    4035           14036                           NOOP                                   	#
+000058,000058:    4036           14037                           NOOP                                   	#
+000059,000059:    4037           14040                           NOOP                                   	#
+000060,000060: 
+000061,000061:    4040           50017                           RESUME                                 	# DOWNRUPT
+000062,000062:    4041           14042                           NOOP                                   	#
+000063,000063:    4042           14043                           NOOP                                   	#
+000064,000064:    4043           14044                           NOOP                                   	#
+000065,000065: 
+000066,000066:    4044           50017                           RESUME                                 	# RADAR RUPT
+000067,000067:    4045           14046                           NOOP                                   	#
+000068,000068:    4046           14047                           NOOP                                   	#
+000069,000069:    4047           14050                           NOOP                                   	#
+000070,000070: 
+000071,000071:    4050           50017                           RESUME                                 	# RUPT10
+000072,000072:    4051           14052                           NOOP                                   	#
+000073,000073:    4052           14053                           NOOP                                   	#
+000074,000074:    4053           14054                           NOOP                                   	#
+000075,000075: 
+000076,000076:                                                                                          	# The interrupt-service routine for the TIME3 interrupt every 40 ms. 
+000077,000077:    4054           34066        T3RUPT             CAF      O37774                        	# Schedule another TIME3 interrupt in 40 ms.
+000078,000078:    4055           54026                           TS       TIME3                         	#
+000079,000079: 
+000080,000080:                                                                                          	# Tickle NEWJOB to keep Night Watchman GOJAMs from happening.
+000081,000081:                                                                                          	# You normally would NOT do this kind of thing in an interrupt-service
+000082,000082:                                                                                          	# routine, because it would actually prevent you from detecting
+000083,000083:                                                                                          	# true misbehavior in the main program.  If you're concerned about
+000084,000084:                                                                                          	# that, just comment out the next instruction and instead sprinkle
+000085,000085:                                                                                          	# your main code with "CS NEWJOB" instructions at strategic points.
+000086,000086:    4056           40067                           CS       NEWJOB                        	#
+000087,000087: 
+000088,000088:                                                                                          	# If you want to build in your own behavior, do it right here!
+000089,000089: 
+000090,000090:                                                                                          	# And resume the main program
+000091,000091:    4057           52011                           DXCH     ARUPT                         	# Restore A, L, and Q, and exit the interrupt
+000092,000092:    4060           00006                           EXTEND                                 	#
+000093,000093:    4061           22012                           QXCH     QRUPT                         	#
+000094,000094:    4062           50017                           RESUME                                 	#
+000095,000095: 
+000096,000096: 
+000097,000097:    4063           00003        STARTUP            RELINT                                 	# Reenable interrupts.
+000098,000098: 
+000099,000099:                                                                                          	# Do your own stuff here!
+000100,000100: 
+000101,000101:                                                                                          	# If you're all done, a nice but complex infinite loop that
+000102,000102:                                                                                          	# won't trigger a TC TRAP GOJAM.
+000103,000103:    4064           40067        ALLDONE            CS       NEWJOB                        	# Tickle the Night Watchman
+000104,000104:    4065           14064                           TCF      ALLDONE                       	#
+000105,000105:                                                                                          	# Define any constants that are needed.
+000106,000106:    4066           37774        O37774             OCT      37774                         	#
+000107,000107: 
+000108,000108: 
+000109,000109:    4067           00004        goMAIN             INHINT                                 	# disable interrupts
+000110,000110: 
+000111,000111:    4070           04100                           TCR      begin                         	#
+000112,000112: 
+000113,000113:                                                                                          	# Test basic instructions.
+000114,000114:                                                                                          	#                TCR        chkTC
+000115,000115:                                                                                          	#                TCR        chkCCS
+000116,000116:                                                                                          	#                TCR        chkINDEX
+000117,000117:                                                                                          	#                TCR        chkXCH
+000118,000118:                                                                                          	#                TCR        chkCS
+000119,000119:    4071           04515                           TCR      chkTS                         	#
+000120,000120:    4072           04642                           TCR      chkAD                         	#
+000121,000121:    4073           04743                           TCR      chkMASK                       	#
+000122,000122: 
+000123,000123:                                                                                          	# Passed all tests.
+000124,000124:    4074           04127                           TCR      finish                        	#
+000125,000125: 
+000126,000126:    4075           56132        fail               XCH      curtest                       	# load last passed test into A
+000127,000127:    4076           54132                           TS       curtest                       	#
+000128,000128: 
+000129,000129:    4077           04077        end                TC       end                           	# finished, TC trap
+000130,000130: 
+000131,000131:                                                                                          	# ----------------------------------------------
+000132,000132:                                                                                          	# INITIALIZE FOR START OF TESTING
+000133,000133: 
+000134,000134:    4100           56134        begin              XCH      STRTcode                      	#
+000135,000135:    4101           54132                           TS       curtest                       	# set current test code to START
+000136,000136:    4102           00002                           RETURN                                 	#
+000137,000137: 
+000138,000138:                                                                                          	# ----------------------------------------------
+000139,000139:                                                                                          	# TEST TC INSTRUCTION SUBROUTINE
+000140,000140:                                                                                          	# L:        TC        K
+000141,000141:                                                                                          	# Verifies the following:
+000142,000142:                                                                                          	# - Set C(Q) = TC L+1
+000143,000143:                                                                                          	# - Take next instruction from K, and proceed from there.
+000144,000144: 
+000145,000145:    4103                        START              EQUALS   000                           	#
+000146,000146:    4103                        TCtst              EQUALS   001                           	# TC check failed
+000147,000147:    4103                        CCStst             EQUALS   002                           	# CCS check failed
+000148,000148:    4103                        INDEXtst           EQUALS   003                           	# INDEX check failed
+000149,000149:    4103                        XCHtst             EQUALS   004                           	# XCH check failed
+000150,000150:    4103                        CStst              EQUALS   005                           	# CS check failed
+000151,000151:    4103                        TStst              EQUALS   006                           	# TS check failed
+000152,000152:    4103                        ADtst              EQUALS   007                           	# AD check failed
+000153,000153:    4103                        MASKtst            EQUALS   010                           	# MASK check failed
+000154,000154:    4103                        PASS               EQUALS   012345                        	# PASSED all checks
+000155,000155: 
+000156,000156:    4103           00001        TCcode             ADRES    TCtst                         	# code for this test
+000157,000157:    4104           00002        CCScode            ADRES    CCStst                        	# code for this test
+000158,000158:    4105           00003        INDEXcode           ADRES    INDEXtst                      	# code for this test
+000159,000159: 
+000160,000160:                                                                                          	#Qtest      OCT      TCret1     # expected return address
+000161,000161: 
+000162,000162:    4106                        curtest            EQUALS   0132                          	# current test
+000163,000163:    4106                        savQ               EQUALS   0133                          	#
+000164,000164:    4106                        STRTcode           EQUALS   0134                          	#  START
+000165,000165:                                                                                          	# CCS test
+000166,000166:    4106                        CCSk               EQUALS   0135                          	#
+000167,000167:    4106                        INDXval            EQUALS   0136                          	#
+000168,000168: 
+000169,000169:                                                                                          	# XCH test
+000170,000170:                                                                                          	# pre-set in erasable memory because we don't
+000171,000171:                                                                                          	# want to use XCH to initialize them prior to testing XCH.
+000172,000172:    4106                        XCHkP0             EQUALS   0140                          	# +0
+000173,000173:    4106                        XCHkM0             EQUALS   0141                          	# -0
+000174,000174:    4106                        XCHkalt1           EQUALS   0142                          	# %52525        # alternating bit pattern 1
+000175,000175:    4106                        XCHkalt2           EQUALS   0143                          	# %25252        # alternating bit pattern 2
+000176,000176: 
+000177,000177:                                                                                          	# TS test
+000178,000178:    4106                        TSk                EQUALS   0144                          	#       -0
+000179,000179: 
+000180,000180:                                                                                          	# AD test
+000181,000181:    4106                        ADk                EQUALS   0145                          	#       -0
+000182,000182: 
+000183,000183:    4106           04114        Qtest              ADRES    TCret1                        	#
+000184,000184: 
+000185,000185:    4107           56002        chkTC              XCH      Q                             	#
+000186,000186:    4110           54133                           TS       savQ                          	# save return address
+000187,000187: 
+000188,000188:    4111           34103                           CAF      TCcode                        	#
+000189,000189:    4112           54132                           TS       curtest                       	# set current test code to this test
+000190,000190: 
+000191,000191:                                                                                          	# attempt a jump
+000192,000192:    4113           04115                           TC       TCjmp1                        	# make test jump
+000193,000193:    4114           04075        TCret1             TC       fail                          	# failed to jump
+000194,000194: 
+000195,000195:                                                                                          	# verify correct return address in Q
+000196,000196:    4115           40002        TCjmp1             CS       Q                             	#
+000197,000197:    4116           64106                           AD       Qtest                         	# put (-Q) + val2 in A
+000198,000198:    4117           10000                           CCS      A                             	# A = DABS
+000199,000199:    4120           04075                           TC       fail                          	# >0 (Q < Qtest)
+000200,000200:    4121           04075                           TC       fail                          	# +0 (never happens)
+000201,000201:    4122           04075                           TC       fail                          	# <0 (Q > Qtest)
+000202,000202: 
+000203,000203:                                                                                          	# passed the test
+000204,000204:    4123           56133                           XCH      savQ                          	#
+000205,000205:    4124           54002                           TS       Q                             	# restore return address
+000206,000206:    4125           00002                           RETURN                                 	#
+000207,000207:                                                                                          	# --------------
+000208,000208: 
+000209,000209:                                                                                          	# ----------------------------------------------
+000210,000210:                                                                                          	# PASSED ALL TESTS!
+000211,000211: 
+000212,000212:    4126           12345        PASScode           OCT      12345                         	#
+000213,000213: 
+000214,000214:    4127           34126        finish             CAF      PASScode                      	#
+000215,000215:    4130           54132                           TS       curtest                       	# set current test code to PASS
+000216,000216:    4131           00002                           RETURN                                 	#
+000217,000217: 
+000218,000218:                                                                                          	# ----------------------------------------------
+000219,000219:                                                                                          	# TEST CCS INSTRUCTION SUBROUTINE
+000220,000220:                                                                                          	# L:        CCS        K
+000221,000221:                                                                                          	# Verifies the following:
+000222,000222:                                                                                          	# - take next instruction from L+n and proceed from there, where:
+000223,000223:                                                                                          	# -- n = 1 if C(K) > 0
+000224,000224:                                                                                          	# -- n = 2 if C(K) = +0
+000225,000225:                                                                                          	# -- n = 3 if C(K) < 0
+000226,000226:                                                                                          	# -- n = 4 if C(K) = -0
+000227,000227:                                                                                          	# - set C(A) = DABS[C(K)], where DABS (diminished abs value):
+000228,000228:                                                                                          	# -- DABS(a) = abs(a) - 1,        if abs(a) > 1
+000229,000229:                                                                                          	# -- DABS(a) = +0,                 if abs(a) <= 1
+000230,000230: 
+000231,000231:                                                                                          	# CCScode         DS        CCStst        # code for this test
+000232,000232:                                                                                          	# test values (K)
+000233,000233:    4132           77775        CCSkM2             OCT      -2                            	#
+000234,000234:    4133           77776        CCSkM1             OCT      -1                            	#
+000235,000235:    4134           77777        CCSkM0             OCT      -0                            	#
+000236,000236:    4135           00000        CCSkP0             OCT      +0                            	#
+000237,000237:    4136           00001        CCSkP1             OCT      +1                            	#
+000238,000238:    4137           00002        CCSkP2             OCT      +2                            	#
+000239,000239: 
+000240,000240:                                                                                          	# expected DABS values
+000241,000241:    4140           00001        CCSdM2             OCT      1                             	# for K=-2, DABS = +1
+000242,000242:    4141           00000        CCSdM1             OCT      0                             	# for K=-1, DABS = +0
+000243,000243:    4142           00000        CCSdM0             OCT      0                             	# for K=-0, DABS = +0
+000244,000244:    4143           00000        CCSdP0             OCT      0                             	# for K=+0, DABS = +0
+000245,000245:    4144           00000        CCSdP1             OCT      0                             	# for K=+1, DABS = +0
+000246,000246:    4145           00001        CCSdP2             OCT      1                             	# for K=+2, DABS = +1
+000247,000247: 
+000248,000248:    4146           56002        chkCCS             XCH      Q                             	#
+000249,000249:    4147           54133                           TS       savQ                          	# save return address
+000250,000250: 
+000251,000251:    4150           34104                           CAF      CCScode                       	#
+000252,000252:    4151           54132                           TS       curtest                       	# set current test code to this test
+000253,000253: 
+000254,000254:                                                                                          	# set K to -2 and execute CCS: 
+000255,000255:                                                                                          	# check for correct branch
+000256,000256:    4152           34132                           CAF      CCSkM2                        	# set K = -2
+000257,000257:    4153           54135                           TS       CCSk                          	#
+000258,000258:    4154           10135                           CCS      CCSk                          	# A = DABS[C(K)]
+000259,000259:    4155           04075                           TC       fail                          	# K > 0
+000260,000260:    4156           04075                           TC       fail                          	# K= +0
+000261,000261:    4157           04161                           TC       lCCS1                         	# K < 0
+000262,000262:    4160           04075                           TC       fail                          	# K= -0
+000263,000263:                                                                                          	# check for correct DABS in A (for K=-2, it should be 1)
+000264,000264:    4161           40000        lCCS1              COM                                    	# 1's compliment of A
+000265,000265:    4162           64140                           AD       CCSdM2                        	# put (-A) + expected value in A
+000266,000266:    4163           10000                           CCS      A                             	# A = DABS
+000267,000267:    4164           04075                           TC       fail                          	# >0 (A < expected value)
+000268,000268:    4165           04075                           TC       fail                          	# +0
+000269,000269:    4166           04075                           TC       fail                          	# <0 (A > expected value)
+000270,000270: 
+000271,000271:                                                                                          	# set K to -1 and execute CCS: 
+000272,000272:                                                                                          	# check for correct branch
+000273,000273:    4167           34133                           CAF      CCSkM1                        	# set K = -1
+000274,000274:    4170           54135                           TS       CCSk                          	#
+000275,000275:    4171           10135                           CCS      CCSk                          	# A = DABS[C(K)]
+000276,000276:    4172           04075                           TC       fail                          	# K > 0
+000277,000277:    4173           04075                           TC       fail                          	# K= +0
+000278,000278:    4174           04176                           TC       lCCS2                         	# K < 0
+000279,000279:    4175           04075                           TC       fail                          	# K= -0
+000280,000280:                                                                                          	# check for correct DABS in A (for K=-1, it should be +0)
+000281,000281:    4176           40000        lCCS2              COM                                    	# 1's compliment of A
+000282,000282:    4177           64141                           AD       CCSdM1                        	# put (-A) + expected value in A
+000283,000283:    4200           10000                           CCS      A                             	# A = DABS
+000284,000284:    4201           04075                           TC       fail                          	# >0 (A < expected value)
+000285,000285:    4202           04075                           TC       fail                          	# +0
+000286,000286:    4203           04075                           TC       fail                          	# <0 (A > expected value)
+000287,000287: 
+000288,000288:                                                                                          	# set K to -0 and execute CCS: 
+000289,000289:                                                                                          	# check for correct branch
+000290,000290:    4204           34134                           CAF      CCSkM0                        	# set K = -0
+000291,000291:    4205           54135                           TS       CCSk                          	#
+000292,000292:    4206           10135                           CCS      CCSk                          	# A = DABS[C(K)]
+000293,000293:    4207           04075                           TC       fail                          	# K > 0
+000294,000294:    4210           04075                           TC       fail                          	# K= +0
+000295,000295:    4211           04075                           TC       fail                          	# K < 0
+000296,000296:                                                                                          	# check for correct DABS in A (for K=-0, it should be +0)
+000297,000297:    4212           40000                           COM                                    	# 1's compliment of A
+000298,000298:    4213           64142                           AD       CCSdM0                        	# put (-A) + expected value in A
+000299,000299:    4214           10000                           CCS      A                             	# A = DABS
+000300,000300:    4215           04075                           TC       fail                          	# >0 (A < expected value)
+000301,000301:    4216           04075                           TC       fail                          	# +0
+000302,000302:    4217           04075                           TC       fail                          	# <0 (A > expected value)
+000303,000303: 
+000304,000304:                                                                                          	# set K to +0 and execute CCS: 
+000305,000305:                                                                                          	# check for correct branch
+000306,000306:    4220           34135                           CAF      CCSkP0                        	# set K = +0
+000307,000307:    4221           54135                           TS       CCSk                          	#
+000308,000308:    4222           10135                           CCS      CCSk                          	# A = DABS[C(K)]
+000309,000309:    4223           04075                           TC       fail                          	# K > 0
+000310,000310:    4224           04227                           TC       lCCS3                         	# K= +0
+000311,000311:    4225           04075                           TC       fail                          	# K < 0
+000312,000312:    4226           04075                           TC       fail                          	# K= -0
+000313,000313:                                                                                          	# check for correct DABS in A (for K=+0, it should be +0)
+000314,000314:    4227           40000        lCCS3              COM                                    	# 1's compliment of A
+000315,000315:    4230           64143                           AD       CCSdP0                        	# put (-A) + expected value in A
+000316,000316:    4231           10000                           CCS      A                             	# A = DABS
+000317,000317:    4232           04075                           TC       fail                          	# >0 (A < expected value)
+000318,000318:    4233           04075                           TC       fail                          	# +0
+000319,000319:    4234           04075                           TC       fail                          	# <0 (A > expected value)
+000320,000320: 
+000321,000321:                                                                                          	# set K to +1 and execute CCS: 
+000322,000322:                                                                                          	# check for correct branch
+000323,000323:    4235           34136                           CAF      CCSkP1                        	# set K = +1
+000324,000324:    4236           54135                           TS       CCSk                          	#
+000325,000325:    4237           10135                           CCS      CCSk                          	# A = DABS[C(K)]
+000326,000326:    4240           04244                           TC       lCCS4                         	# K > 0
+000327,000327:    4241           04075                           TC       fail                          	# K= +0
+000328,000328:    4242           04075                           TC       fail                          	# K < 0
+000329,000329:    4243           04075                           TC       fail                          	# K= -0
+000330,000330:                                                                                          	# check for correct DABS in A (for K=+1, it should be +0)
+000331,000331:    4244           40000        lCCS4              COM                                    	# 1's compliment of A
+000332,000332:    4245           64144                           AD       CCSdP1                        	# put (-A) + expected value in A
+000333,000333:    4246           10000                           CCS      A                             	# A = DABS
+000334,000334:    4247           04075                           TC       fail                          	# >0 (A < expected value)
+000335,000335:    4250           04075                           TC       fail                          	# +0
+000336,000336:    4251           04075                           TC       fail                          	# <0 (A > expected value)
+000337,000337: 
+000338,000338:                                                                                          	# set K to +2 and execute CCS: 
+000339,000339:                                                                                          	# check for correct branch
+000340,000340:    4252           34137                           CAF      CCSkP2                        	# set K = +2
+000341,000341:    4253           54135                           TS       CCSk                          	#
+000342,000342:    4254           10135                           CCS      CCSk                          	# A = DABS[C(K)]
+000343,000343:    4255           04261                           TC       lCCS5                         	# K > 0
+000344,000344:    4256           04075                           TC       fail                          	# K= +0
+000345,000345:    4257           04075                           TC       fail                          	# K < 0
+000346,000346:    4260           04075                           TC       fail                          	# K= -0
+000347,000347:                                                                                          	# check for correct DABS in A (for K=+2, it should be +1)
+000348,000348:    4261           40000        lCCS5              COM                                    	# 1's compliment of A
+000349,000349:    4262           64145                           AD       CCSdP2                        	# put (-A) + expected value in A
+000350,000350:    4263           10000                           CCS      A                             	# A = DABS
+000351,000351:    4264           04075                           TC       fail                          	# >0 (A < expected value)
+000352,000352:    4265           04075                           TC       fail                          	# +0
+000353,000353:    4266           04075                           TC       fail                          	# <0 (A > expected value)
+000354,000354: 
+000355,000355:                                                                                          	# passed the test
+000356,000356:    4267           56133                           XCH      savQ                          	#
+000357,000357:    4270           54002                           TS       Q                             	# restore return address
+000358,000358:    4271           00002                           RETURN                                 	#
+000359,000359: 
+000360,000360:                                                                                          	# ----------------------------------------------
+000361,000361:                                                                                          	# TEST INDEX INSTRUCTION SUBROUTINE
+000362,000362:                                                                                          	# L:        INDEX        K        (where K != 0025)
+000363,000363:                                                                                          	# Verifies the following#
+000364,000364:                                                                                          	# - Use the sum of C(L+1) + C(K) as the next instruction
+000365,000365:                                                                                          	# -- just as if that sum had been taken from L+1.
+000366,000366: 
+000367,000367:                                                                                          	# INDXcode        OCT       3        # code for this test
+000368,000368:    4272           00005        INDXst             OCT      5                             	# somewhere in fixed memory
+000369,000369: 
+000370,000370:    4273           00000        INDXbas            OCT      0                             	# base address for indexing
+000371,000371:    4274           00001                           OCT      1                             	#
+000372,000372:    4275           00002                           OCT      2                             	#
+000373,000373:    4276           00003                           OCT      3                             	#
+000374,000374:    4277           00004                           OCT      4                             	#
+000375,000375:    4300           00005                           OCT      5                             	#
+000376,000376: 
+000377,000377:    4301           56002        chkINDEX           XCH      Q                             	#
+000378,000378:    4302           54133                           TS       savQ                          	# save return address
+000379,000379: 
+000380,000380:    4303           34105                           CAF      INDEXcode                     	#
+000381,000381:    4304           54132                           TS       curtest                       	# set current test code to this test
+000382,000382: 
+000383,000383:                                                                                          	# Decrementing loop
+000384,000384:                                                                                          	#        - always executes at least once (tests at end of loop)
+000385,000385:                                                                                          	#        - loops 'INDXst+1' times# decrements INDXval
+000386,000386: 
+000387,000387:    4305           34272                           CAF      INDXst                        	# initialize loop counter
+000388,000388: 
+000389,000389:    4306           54136        INDXlop            TS       INDXval                       	#
+000390,000390: 
+000391,000391:                                                                                          	# perform indexed CAF of values in INDXbas array#
+000392,000392:                                                                                          	# index values range from 5 to 0
+000393,000393:    4307           50136                           INDEX    INDXval                       	#
+000394,000394:    4310           34273                           CAF      INDXbas                       	#
+000395,000395: 
+000396,000396:                                                                                          	# verify value retrieved using INDEX matches expected value
+000397,000397:    4311           40000                           COM                                    	# get -A
+000398,000398:    4312           60136                           AD       INDXval                       	# put (-A) + expected value in A
+000399,000399:    4313           10000                           CCS      A                             	# compare
+000400,000400:    4314           04075                           TC       fail                          	# >0 (A < expected value)
+000401,000401:    4315           04075                           TC       fail                          	# +0
+000402,000402:    4316           04075                           TC       fail                          	# <0 (A > expected value)
+000403,000403: 
+000404,000404:    4317           10136                           CCS      INDXval                       	# done?
+000405,000405:    4320           04306                           TC       INDXlop                       	# not yet
+000406,000406: 
+000407,000407:    4321           56133                           XCH      savQ                          	#
+000408,000408:    4322           54002                           TS       Q                             	# restore return address
+000409,000409:    4323           00002                           RETURN                                 	#
+000410,000410: 
+000411,000411:                                                                                          	# ----------------------------------------------
+000412,000412:                                                                                          	# TEST XCH INSTRUCTION SUBROUTINE
+000413,000413:                                                                                          	# L:        XCH        K
+000414,000414:                                                                                          	# Verifies the following:
+000415,000415:                                                                                          	# - set C(A) = b(K)
+000416,000416:                                                                                          	# - set C(K) = b(A)
+000417,000417:                                                                                          	# - take next instruction from L+1
+000418,000418: 
+000419,000419:    4324           00004        XCHcode            ADRES    XCHtst                        	# code for this test
+000420,000420:                                                                                          	# XCH test values
+000421,000421:    4325           00000        XCHfP0             OCT      +0                            	#
+000422,000422:    4326           77777        XCHfM0             OCT      -0                            	#
+000423,000423:    4327           52525        XCHfalt1           OCT      52525                         	# alternating bit pattern 1
+000424,000424:    4330           25252        XCHfalt2           OCT      25252                         	# alternating bit pattern 2
+000425,000425: 
+000426,000426:    4331           56002        chkXCH             XCH      Q                             	#
+000427,000427:    4332           54133                           TS       savQ                          	# save return address
+000428,000428: 
+000429,000429:                                                                                          	# FAKE - Should be preloaded ...
+000430,000430:    4333           34325                           CAF      XCHfP0                        	#
+000431,000431:    4334           54140                           TS       XCHkP0                        	#
+000432,000432:    4335           54144                           TS       TSk                           	#
+000433,000433:    4336           54145                           TS       ADk                           	#
+000434,000434:    4337           34326                           CAF      XCHfM0                        	#
+000435,000435:    4340           54141                           TS       XCHkM0                        	#
+000436,000436:    4341           34327                           CAF      XCHfalt1                      	#
+000437,000437:    4342           54142                           TS       XCHkalt1                      	#
+000438,000438:    4343           34330                           CAF      XCHfalt2                      	#
+000439,000439:    4344           54143                           TS       XCHkalt2                      	#
+000440,000440: 
+000441,000441:    4345           34324                           CAF      XCHcode                       	#
+000442,000442:    4346           54132                           TS       curtest                       	# set current test code to this test
+000443,000443: 
+000444,000444:                                                                                          	# test - initial conditions: K=+0, A=-0
+000445,000445:                                                                                          	# initialize A
+000446,000446:    4347           44325                           CS       XCHfP0                        	#
+000447,000447:                                                                                          	# exchange A and K
+000448,000448:    4350           56140                           XCH      XCHkP0                        	#
+000449,000449:                                                                                          	# test contents of A for expected value
+000450,000450:    4351           40000                           COM                                    	# get -A
+000451,000451:    4352           64325                           AD       XCHfP0                        	# put (-A) + expected value in A
+000452,000452:    4353           10000                           CCS      A                             	# A = DABS
+000453,000453:    4354           04075                           TC       fail                          	# >0 (A < expected value)
+000454,000454:    4355           04075                           TC       fail                          	# +0
+000455,000455:    4356           04075                           TC       fail                          	# <0 (A > expected value)
+000456,000456:                                                                                          	# test contents of K for expected value
+000457,000457:    4357           40140                           CS       XCHkP0                        	# get -A
+000458,000458:    4360           64326                           AD       XCHfM0                        	# put (-A) + expected value in A
+000459,000459:    4361           10000                           CCS      A                             	# A = DABS
+000460,000460:    4362           04075                           TC       fail                          	# >0 (A < expected value)
+000461,000461:    4363           04075                           TC       fail                          	# +0
+000462,000462:    4364           04075                           TC       fail                          	# <0 (A > expected value)
+000463,000463: 
+000464,000464:                                                                                          	# test - initial conditions: K=-0, A=+0
+000465,000465:                                                                                          	# initialize A
+000466,000466:    4365           44326                           CS       XCHfM0                        	#
+000467,000467:                                                                                          	# exchange A and K
+000468,000468:    4366           56141                           XCH      XCHkM0                        	#
+000469,000469:                                                                                          	# test contents of A for expected value
+000470,000470:    4367           40000                           COM                                    	# get -A
+000471,000471:    4370           64326                           AD       XCHfM0                        	# put (-A) + expected value in A
+000472,000472:    4371           10000                           CCS      A                             	# A = DABS
+000473,000473:    4372           04075                           TC       fail                          	# >0 (A < expected value)
+000474,000474:    4373           04075                           TC       fail                          	# +0
+000475,000475:    4374           04075                           TC       fail                          	# <0 (A > expected value)
+000476,000476:                                                                                          	# test contents of K for expected value
+000477,000477:    4375           40141                           CS       XCHkM0                        	# get -A
+000478,000478:    4376           64325                           AD       XCHfP0                        	# put (-A) + expected value in A
+000479,000479:    4377           10000                           CCS      A                             	# A = DABS
+000480,000480:    4400           04075                           TC       fail                          	# >0 (A < expected value)
+000481,000481:    4401           04075                           TC       fail                          	# +0
+000482,000482:    4402           04075                           TC       fail                          	# <0 (A > expected value)
+000483,000483: 
+000484,000484:                                                                                          	# test - initial conditions: K=52525, A=25252
+000485,000485:                                                                                          	# initialize A
+000486,000486:    4403           44327                           CS       XCHfalt1                      	#
+000487,000487:                                                                                          	# exchange A and K
+000488,000488:    4404           56142                           XCH      XCHkalt1                      	#
+000489,000489:                                                                                          	# test contents of A for expected value
+000490,000490:    4405           40000                           COM                                    	# get -A
+000491,000491:    4406           64327                           AD       XCHfalt1                      	# put (-A) + expected value in A
+000492,000492:    4407           10000                           CCS      A                             	# A = DABS
+000493,000493:    4410           04075                           TC       fail                          	# >0 (A < expected value)
+000494,000494:    4411           04075                           TC       fail                          	# +0
+000495,000495:    4412           04075                           TC       fail                          	# <0 (A > expected value)
+000496,000496:                                                                                          	# test contents of K for expected value
+000497,000497:    4413           40142                           CS       XCHkalt1                      	# get -A
+000498,000498:    4414           64330                           AD       XCHfalt2                      	# put (-A) + expected value in A
+000499,000499:    4415           10000                           CCS      A                             	# A = DABS
+000500,000500:    4416           04075                           TC       fail                          	# >0 (A < expected value)
+000501,000501:    4417           04075                           TC       fail                          	# +0
+000502,000502:    4420           04075                           TC       fail                          	# <0 (A > expected value)
+000503,000503: 
+000504,000504:                                                                                          	# test - initial conditions: K=25252, A=52525
+000505,000505:                                                                                          	# initialize A
+000506,000506:    4421           44330                           CS       XCHfalt2                      	#
+000507,000507:                                                                                          	# exchange A and K
+000508,000508:    4422           56143                           XCH      XCHkalt2                      	#
+000509,000509:                                                                                          	# test contents of A for expected value
+000510,000510:    4423           40000                           COM                                    	# get -A
+000511,000511:    4424           64330                           AD       XCHfalt2                      	# put (-A) + expected value in A
+000512,000512:    4425           10000                           CCS      A                             	# A = DABS
+000513,000513:    4426           04075                           TC       fail                          	# >0 (A < expected value)
+000514,000514:    4427           04075                           TC       fail                          	# +0
+000515,000515:    4430           04075                           TC       fail                          	# <0 (A > expected value)
+000516,000516:                                                                                          	# test contents of K for expected value
+000517,000517:    4431           40143                           CS       XCHkalt2                      	# get -A
+000518,000518:    4432           64327                           AD       XCHfalt1                      	# put (-A) + expected value in A
+000519,000519:    4433           10000                           CCS      A                             	# A = DABS
+000520,000520:    4434           04075                           TC       fail                          	# >0 (A < expected value)
+000521,000521:    4435           04075                           TC       fail                          	# +0
+000522,000522:    4436           04075                           TC       fail                          	# <0 (A > expected value)
+000523,000523: 
+000524,000524:                                                                                          	# passed the test
+000525,000525:    4437           56133                           XCH      savQ                          	#
+000526,000526:    4440           54002                           TS       Q                             	# restore return address
+000527,000527:    4441           00002                           RETURN                                 	#
+000528,000528: 
+000529,000529:                                                                                          	# ----------------------------------------------
+000530,000530:                                                                                          	# TEST CS INSTRUCTION SUBROUTINE
+000531,000531:                                                                                          	# L:        CS        K
+000532,000532:                                                                                          	# Verifies the following:
+000533,000533:                                                                                          	# - Set C(A) = -C(K)
+000534,000534:                                                                                          	# - Take next instruction from L+1
+000535,000535: 
+000536,000536:    4442           00005        CScode             ADRES    CStst                         	# code for this test
+000537,000537:                                                                                          	# test values (K)
+000538,000538:    4443           00000        CSkP0              OCT      +0                            	#
+000539,000539:    4444           77777        CSkM0              OCT      -0                            	#
+000540,000540:    4445           52525        CSkalt1            OCT      52525                         	# 1's C of CSkalt2
+000541,000541:    4446           25252        CSkalt2            OCT      25252                         	# 1's C of CSkalt1
+000542,000542: 
+000543,000543:    4447           56002        chkCS              XCH      Q                             	#
+000544,000544:    4450           54133                           TS       savQ                          	# save return address
+000545,000545: 
+000546,000546:    4451           34442                           CAF      CScode                        	#
+000547,000547:    4452           54132                           TS       curtest                       	# set current test code to this test
+000548,000548: 
+000549,000549:                                                                                          	# clear and subtract +0
+000550,000550:    4453           44443                           CS       CSkP0                         	# load 1's compliment of K into A
+000551,000551:    4454           64443                           AD       CSkP0                         	# put (-A) + expected value in A
+000552,000552:    4455           10000                           CCS      A                             	# compare
+000553,000553:    4456           04075                           TC       fail                          	# >0 (A < expected value)
+000554,000554:    4457           04075                           TC       fail                          	# +0
+000555,000555:    4460           04075                           TC       fail                          	# <0 (A > expected value)
+000556,000556: 
+000557,000557:                                                                                          	# clear and subtract -0
+000558,000558:    4461           44444                           CS       CSkM0                         	# load 1's compliment of K into A
+000559,000559:    4462           64444                           AD       CSkM0                         	# put (-A) + expected value in A
+000560,000560:    4463           10000                           CCS      A                             	# compare
+000561,000561:    4464           04075                           TC       fail                          	# >0 (A < expected value)
+000562,000562:    4465           04075                           TC       fail                          	# +0
+000563,000563:    4466           04075                           TC       fail                          	# <0 (A > expected value)
+000564,000564: 
+000565,000565:                                                                                          	# clear and subtract alternating bit pattern %52525
+000566,000566:    4467           44445                           CS       CSkalt1                       	# load 1's compliment of K into A
+000567,000567:    4470           64445                           AD       CSkalt1                       	# put (-A) + expected value in A
+000568,000568:    4471           10000                           CCS      A                             	# compare
+000569,000569:    4472           04075                           TC       fail                          	# >0 (A < expected value)
+000570,000570:    4473           04075                           TC       fail                          	# +0
+000571,000571:    4474           04075                           TC       fail                          	# <0 (A > expected value)
+000572,000572: 
+000573,000573:                                                                                          	# clear and subtract alternating bit pattern %25252
+000574,000574:    4475           44446                           CS       CSkalt2                       	# load 1's compliment of K into A
+000575,000575:    4476           64446                           AD       CSkalt2                       	# put (-A) + expected value in A
+000576,000576:    4477           10000                           CCS      A                             	# compare
+000577,000577:    4500           04075                           TC       fail                          	# >0 (A < expected value)
+000578,000578:    4501           04075                           TC       fail                          	# +0
+000579,000579:    4502           04075                           TC       fail                          	# <0 (A > expected value)
+000580,000580: 
+000581,000581:                                                                                          	# passed the test
+000582,000582:    4503           56133                           XCH      savQ                          	#
+000583,000583:    4504           54002                           TS       Q                             	# restore return address
+000584,000584:    4505           00002                           RETURN                                 	#
+000585,000585:                                                                                          	# ----------------------------------------------
+000586,000586:                                                                                          	# TEST TS INSTRUCTION SUBROUTINE
+000587,000587:                                                                                          	# L#        TS         K
+000588,000588:                                                                                          	# Verifies the following:
+000589,000589:                                                                                          	# - Set C(K) = b(A)
+000590,000590:                                                                                          	# - If b(A) contains no overflow, 
+000591,000591:                                                                                          	# -- C(A) = b(A)# take next instruction from L+1
+000592,000592:                                                                                          	# - If b(A) has positive overflow, C(A) = 000001# 
+000593,000593:                                                                                          	# -- take next instruction from L+2
+000594,000594:                                                                                          	# - If b(A) has negative overflow, C(A) = 177776# 
+000595,000595:                                                                                          	# -- take next instruction from L+2
+000596,000596: 
+000597,000597:    4506           00006        TScode             ADRES    TStst                         	# code for this test
+000598,000598:    4507           00001        TSone              OCT      +1                            	#
+000599,000599:    4510           00000        TSzero             OCT      +0                            	#
+000600,000600:    4511           77777        TSmzero            OCT      -0                            	#
+000601,000601:    4512           77776        TSmone             OCT      -1                            	#
+000602,000602:    4513           37777        TSkP1              OCT      37777                         	# TEST1: largest positive number w/no overflow
+000603,000603:    4514           40000        TSkM1              OCT      40000                         	# TEST2: largest negative number w/no overflow
+000604,000604: 
+000605,000605:    4515           56002        chkTS              XCH      Q                             	#
+000606,000606:    4516           54133                           TS       savQ                          	# save return address
+000607,000607: 
+000608,000608:    4517           34506                           CAF      TScode                        	#
+000609,000609:    4520           54132                           TS       curtest                       	# set current test code to this test
+000610,000610: 
+000611,000611:                                                                                          	# initialize TSk to -0
+000612,000612:    4521           34511                           CAF      TSmzero                       	#
+000613,000613:    4522           56144                           XCH      TSk                           	#
+000614,000614: 
+000615,000615:                                                                                          	# TEST 1: store positive number, no overflow
+000616,000616:    4523           34513                           CAF      TSkP1                         	#
+000617,000617:    4524           54144                           TS       TSk                           	#
+000618,000618:    4525           04527                           TC       lTS1                          	# no overflow
+000619,000619:    4526           04075                           TC       fail                          	# overflow
+000620,000620:                                                                                          	# verify C(A) = b(A)
+000621,000621:    4527           40000        lTS1               COM                                    	# get -A
+000622,000622:    4530           64513                           AD       TSkP1                         	# put (-A) + expected value in A
+000623,000623:    4531           10000                           CCS      A                             	# compare
+000624,000624:    4532           04075                           TC       fail                          	# >0 (A < expected value)
+000625,000625:    4533           04075                           TC       fail                          	# +0
+000626,000626:    4534           04075                           TC       fail                          	# <0 (A > expected value)
+000627,000627:                                                                                          	# verify C(K) = b(A)
+000628,000628:    4535           44513                           CS       TSkP1                         	# get -expected value
+000629,000629:    4536           60144                           AD       TSk                           	# put (-expected value) + C(K) into A
+000630,000630:    4537           10000                           CCS      A                             	# compare
+000631,000631:    4540           04075                           TC       fail                          	# >0 (A < expected value)
+000632,000632:    4541           04075                           TC       fail                          	# +0
+000633,000633:    4542           04075                           TC       fail                          	# <0 (A > expected value)
+000634,000634: 
+000635,000635:                                                                                          	# TEST 2: store negative number, no overflow
+000636,000636:    4543           34514                           CAF      TSkM1                         	#
+000637,000637:    4544           54144                           TS       TSk                           	#
+000638,000638:    4545           04547                           TC       lTS2                          	# no overflow
+000639,000639:    4546           04075                           TC       fail                          	# overflow
+000640,000640:                                                                                          	# verify C(A) = b(A)
+000641,000641:    4547           40000        lTS2               COM                                    	# get -A
+000642,000642:    4550           64514                           AD       TSkM1                         	# put (-A) + expected value in A
+000643,000643:    4551           10000                           CCS      A                             	# compare
+000644,000644:    4552           04075                           TC       fail                          	# >0 (A < expected value)
+000645,000645:    4553           04075                           TC       fail                          	# +0
+000646,000646:    4554           04075                           TC       fail                          	# <0 (A > expected value)
+000647,000647:                                                                                          	# verify C(K) = b(A)
+000648,000648:    4555           44514                           CS       TSkM1                         	# get -expected value
+000649,000649:    4556           60144                           AD       TSk                           	# put (-expected value) + C(K) into A
+000650,000650:    4557           10000                           CCS      A                             	# compare
+000651,000651:    4560           04075                           TC       fail                          	# >0 (A < expected value)
+000652,000652:    4561           04075                           TC       fail                          	# +0
+000653,000653:    4562           04075                           TC       fail                          	# <0 (A > expected value)
+000654,000654: 
+000655,000655:                                                                                          	# TEST 3: store positive number, overflow
+000656,000656:    4563           34513                           CAF      TSkP1                         	# get largest positive number
+000657,000657:    4564           64507                           AD       TSone                         	# make it overflow# A = negative overflow
+000658,000658:    4565           54144                           TS       TSk                           	# store the positive overflow
+000659,000659:    4566           04075                           TC       fail                          	# no overflow
+000660,000660:                                                                                          	# verify C(A) = 000001
+000661,000661:    4567           40000                           COM                                    	# get -A
+000662,000662:    4570           64507                           AD       TSone                         	# put (-A) + expected value in A
+000663,000663:    4571           10000                           CCS      A                             	# compare
+000664,000664:    4572           04075                           TC       fail                          	# >0 (A < expected value)
+000665,000665:    4573           04075                           TC       fail                          	# +0
+000666,000666:    4574           04075                           TC       fail                          	# <0 (A > expected value)
+000667,000667:                                                                                          	# verify C(K) = positive overflow
+000668,000668:    4575           44510                           CS       TSzero                        	# get -expected value
+000669,000669:    4576           60144                           AD       TSk                           	# put (-expected value) + C(K) into A
+000670,000670:    4577           10000                           CCS      A                             	# compare
+000671,000671:    4600           04075                           TC       fail                          	# >0 (A < expected value)
+000672,000672:    4601           04075                           TC       fail                          	# +0
+000673,000673:    4602           04075                           TC       fail                          	# <0 (A > expected value)
+000674,000674: 
+000675,000675:                                                                                          	# TEST 4: store negative number, overflow
+000676,000676:    4603           34514                           CAF      TSkM1                         	# get largest negative number
+000677,000677:    4604           64512                           AD       TSmone                        	# make it overflow# A = negative overflow
+000678,000678:    4605           54144                           TS       TSk                           	# store the negative overflow
+000679,000679:    4606           04075                           TC       fail                          	# no overflow
+000680,000680:                                                                                          	# verify C(A) = 177776
+000681,000681:    4607           40000                           COM                                    	# get -A
+000682,000682:    4610           64512                           AD       TSmone                        	# put (-A) + expected value in A
+000683,000683:    4611           10000                           CCS      A                             	# compare
+000684,000684:    4612           04075                           TC       fail                          	# >0 (A < expected value)
+000685,000685:    4613           04075                           TC       fail                          	# +0
+000686,000686:    4614           04075                           TC       fail                          	# <0 (A > expected value)
+000687,000687:                                                                                          	# verify C(K) = negative overflow
+000688,000688:    4615           44511                           CS       TSmzero                       	# get -expected value
+000689,000689:    4616           60144                           AD       TSk                           	# put (-expected value) + C(K) into A
+000690,000690:    4617           10000                           CCS      A                             	# compare
+000691,000691:    4620           04075                           TC       fail                          	# >0 (A < expected value)
+000692,000692:    4621           04075                           TC       fail                          	# +0
+000693,000693:    4622           04075                           TC       fail                          	# <0 (A > expected value)
+000694,000694: 
+000695,000695:    4623           56133                           XCH      savQ                          	#
+000696,000696:    4624           54002                           TS       Q                             	# restore return address
+000697,000697:    4625           00002                           RETURN                                 	#
+000698,000698:                                                                                          	# ----------------------------------------------
+000699,000699:                                                                                          	# TEST AD INSTRUCTION SUBROUTINE
+000700,000700:                                                                                          	# L:        AD        K
+000701,000701:                                                                                          	# Verifies the following:
+000702,000702:                                                                                          	# - Set C(A) = b(A) + C(K)
+000703,000703:                                                                                          	# - Take next instruction from L+1
+000704,000704:                                                                                          	# - if C(A) has positive overflow,
+000705,000705:                                                                                          	# -- increment overflow counter by 1
+000706,000706:                                                                                          	# - if C(A) has negative overflow,
+000707,000707:                                                                                          	# -- decrement overflow counter by 1
+000708,000708: 
+000709,000709:    4626           00007        ADcode             ADRES    ADtst                         	# code for this test
+000710,000710:    4627           00000        ADplus0            OCT      +0                            	#
+000711,000711:    4630           00001        ADplus1            OCT      1                             	#
+000712,000712:    4631           77776        ADmin1             OCT      -1                            	#
+000713,000713: 
+000714,000714:    4632           25252        AD25252            OCT      25252                         	# +10922 decimal
+000715,000715:    4633           12525        AD12525            OCT      12525                         	# +5461 decimal
+000716,000716:    4634           37777        AD37777            OCT      37777                         	# largest positive number
+000717,000717:    4635           12524        AD12524            OCT      12524                         	# positive overflow of %25252+%25252
+000718,000718: 
+000719,000719:    4636           52525        AD52525            OCT      52525                         	# -10922 decimal
+000720,000720:    4637           65252        AD65252            OCT      65252                         	# -5461 decimal
+000721,000721:    4640           40000        AD40000            OCT      40000                         	# largest negative number
+000722,000722:    4641           65253        AD65253            OCT      65253                         	# negative overflow of %52525+65252
+000723,000723: 
+000724,000724:    4642           56002        chkAD              XCH      Q                             	#
+000725,000725:    4643           54133                           TS       savQ                          	# save return address
+000726,000726: 
+000727,000727:    4644           34626                           CAF      ADcode                        	#
+000728,000728:    4645           54132                           TS       curtest                       	# set current test code to this test
+000729,000729: 
+000730,000730:                                                                                          	# TEST1: sum positive, no overflow
+000731,000731:                                                                                          	# add: %25252 + %12525 = %37777 (sign + 14 magnitude)
+000732,000732:    4646           34632                           CAF      AD25252                       	#
+000733,000733:    4647           64633                           AD       AD12525                       	#
+000734,000734:                                                                                          	# verify C(A) = %37777
+000735,000735:    4650           40000                           COM                                    	# get -A
+000736,000736:    4651           64634                           AD       AD37777                       	# put (-A) + expected value in A
+000737,000737:    4652           10000                           CCS      A                             	# compare
+000738,000738:    4653           04075                           TC       fail                          	# >0 (A < expected value)
+000739,000739:    4654           04075                           TC       fail                          	# +0
+000740,000740:    4655           04075                           TC       fail                          	# <0 (A > expected value)
+000741,000741: 
+000742,000742:                                                                                          	# TEST2: sum negative, no overflow (sign + 14 magnitude)
+000743,000743:                                                                                          	# add: %52525 + %65252 = %40000
+000744,000744:    4656           34636                           CAF      AD52525                       	#
+000745,000745:    4657           64637                           AD       AD65252                       	#
+000746,000746:                                                                                          	# verify C(A) = %40000
+000747,000747:    4660           40000                           COM                                    	# get -A
+000748,000748:    4661           64640                           AD       AD40000                       	# put (-A) + expected value in A
+000749,000749:    4662           10000                           CCS      A                             	# compare
+000750,000750:    4663           04075                           TC       fail                          	# >0 (A < expected value)
+000751,000751:    4664           04075                           TC       fail                          	# +0
+000752,000752:    4665           04075                           TC       fail                          	# <0 (A > expected value)
+000753,000753: 
+000754,000754:                                                                                          	# TEST3: sum positive, overflow
+000755,000755:                                                                                          	# initialize overflow counter and positive overflow storage
+000756,000756:    4666           34627                           CAF      ADplus0                       	#
+000757,000757:    4667           54034                           TS       OVFCNTR                       	#
+000758,000758:    4670           54145                           TS       ADk                           	#
+000759,000759:                                                                                          	# add: %25252 + %25252 = %52524 (sign + 14 magnitude)
+000760,000760:    4671           34632                           CAF      AD25252                       	#
+000761,000761:    4672           64632                           AD       AD25252                       	#
+000762,000762:    4673           54145                           TS       ADk                           	# store positive overflow
+000763,000763:    4674           04075                           TC       fail                          	#
+000764,000764:                                                                                          	# verify ADk = %12524
+000765,000765:    4675           40145                           CS       ADk                           	# get -A
+000766,000766:    4676           64635                           AD       AD12524                       	# put (-A) + expected value in A
+000767,000767:    4677           10000                           CCS      A                             	# compare
+000768,000768:    4700           04075                           TC       fail                          	# >0 (A < expected value)
+000769,000769:    4701           04075                           TC       fail                          	# +0
+000770,000770:    4702           04075                           TC       fail                          	# <0 (A > expected value)
+000771,000771:                                                                                          	# verify overflow counter =%00001
+000772,000772:    4703           40034                           CS       OVFCNTR                       	# get -A
+000773,000773:    4704           64630                           AD       ADplus1                       	# put (-A) + expected value in A
+000774,000774:    4705           10000                           CCS      A                             	# compare
+000775,000775:    4706           04075                           TC       fail                          	# >0 (A < expected value)
+000776,000776:    4707           04075                           TC       fail                          	# +0
+000777,000777:    4710           04075                           TC       fail                          	# <0 (A > expected value)
+000778,000778: 
+000779,000779:                                                                                          	# TEST4: sum negative, overflow
+000780,000780:    4711           34627                           CAF      ADplus0                       	#
+000781,000781:    4712           54034                           TS       OVFCNTR                       	#
+000782,000782:    4713           54145                           TS       ADk                           	#
+000783,000783:                                                                                          	# add: %52525 + %52525 = %25253 (sign + 14 magnitude)
+000784,000784:    4714           34636                           CAF      AD52525                       	#
+000785,000785:    4715           64636                           AD       AD52525                       	#
+000786,000786:    4716           54145                           TS       ADk                           	# store negative overflow
+000787,000787:    4717           04075                           TC       fail                          	#
+000788,000788:                                                                                          	# verify ADk = %65253
+000789,000789:    4720           40145                           CS       ADk                           	# get -A
+000790,000790:    4721           64641                           AD       AD65253                       	# put (-A) + expected value in A
+000791,000791:    4722           10000                           CCS      A                             	# compare
+000792,000792:    4723           04075                           TC       fail                          	# >0 (A < expected value)
+000793,000793:    4724           04075                           TC       fail                          	# +0
+000794,000794:    4725           04075                           TC       fail                          	# <0 (A > expected value)
+000795,000795:                                                                                          	# verify overflow counter =%77776
+000796,000796:    4726           40034                           CS       OVFCNTR                       	# get -A
+000797,000797:    4727           64631                           AD       ADmin1                        	# put (-A) + expected value in A
+000798,000798:    4730           10000                           CCS      A                             	# compare
+000799,000799:    4731           04075                           TC       fail                          	# >0 (A < expected value)
+000800,000800:    4732           04075                           TC       fail                          	# +0
+000801,000801:    4733           04075                           TC       fail                          	# <0 (A > expected value)
+000802,000802: 
+000803,000803:    4734           56133                           XCH      savQ                          	#
+000804,000804:    4735           54002                           TS       Q                             	# restore return address
+000805,000805:    4736           00002                           RETURN                                 	#
+000806,000806:                                                                                          	# ----------------------------------------------
+000807,000807:                                                                                          	# TEST MASK INSTRUCTION SUBROUTINE
+000808,000808:                                                                                          	# L:        MASK        K
+000809,000809:                                                                                          	# Verifies the following:
+000810,000810:                                                                                          	# - Set C(A) = b(A) & C(K)
+000811,000811: 
+000812,000812:    4737           00010        MASKcode           ADRES    MASKtst                       	# code for this test
+000813,000813:    4740           46314        MASK1              OCT      46314                         	#
+000814,000814:    4741           25252        MASK2              OCT      25252                         	#
+000815,000815:    4742           04210        MASKval            OCT      04210                         	# expected result of MASK1 & MASK2
+000816,000816: 
+000817,000817:    4743           56002        chkMASK            XCH      Q                             	#
+000818,000818:    4744           54133                           TS       savQ                          	# save return address
+000819,000819: 
+000820,000820:                                                                                          	# perform logical and of MASK1 and MASK2
+000821,000821:    4745           34740                           CAF      MASK1                         	#
+000822,000822:    4746           74741                           MASK     MASK2                         	#
+000823,000823:                                                                                          	# verify C(A) = b(A) & C(K)
+000824,000824:    4747           40000                           COM                                    	# get -A
+000825,000825:    4750           64742                           AD       MASKval                       	# put (-A) + expected value in A
+000826,000826:    4751           10000                           CCS      A                             	# compare
+000827,000827:    4752           04075                           TC       fail                          	# >0 (A < expected value)
+000828,000828:    4753           04075                           TC       fail                          	# +0
+000829,000829:    4754           04075                           TC       fail                          	# <0 (A > expected value)
+000830,000830: 
+000831,000831:    4755           34737                           CAF      MASKcode                      	#
+000832,000832:    4756           54132                           TS       curtest                       	# set current test code to this test
+000833,000833: 
+000834,000834:                                                                                          	# passed the test
+000835,000835:    4757           56133                           XCH      savQ                          	#
+000836,000836:    4760           54002                           TS       Q                             	# restore return address
+000837,000837:    4761           00002                           RETURN                                 	#
+000838,000838:                                                                                          	# ----------------------------------------------
+000839,000839:                                                                                          	# PASSED ALL TESTS!
+
+
+Usage Table for Fixed-Memory Banks
+----------------------------------
+Bank 00:  0000/2000 words used.
+Bank 01:  0000/2000 words used.
+Bank 02:  0762/2000 words used.
+Bank 03:  0000/2000 words used.
+Bank 04:  0000/2000 words used.
+Bank 05:  0000/2000 words used.
+Bank 06:  0000/2000 words used.
+Bank 07:  0000/2000 words used.
+Bank 10:  0000/2000 words used.
+Bank 11:  0000/2000 words used.
+Bank 12:  0000/2000 words used.
+Bank 13:  0000/2000 words used.
+Bank 14:  0000/2000 words used.
+Bank 15:  0000/2000 words used.
+Bank 16:  0000/2000 words used.
+Bank 17:  0000/2000 words used.
+Bank 20:  0000/2000 words used.
+Bank 21:  0000/2000 words used.
+Bank 22:  0000/2000 words used.
+Bank 23:  0000/2000 words used.
+Bank 24:  0000/2000 words used.
+Bank 25:  0000/2000 words used.
+Bank 26:  0000/2000 words used.
+Bank 27:  0000/2000 words used.
+Bank 30:  0000/2000 words used.
+Bank 31:  0000/2000 words used.
+Bank 32:  0000/2000 words used.
+Bank 33:  0000/2000 words used.
+Bank 34:  0000/2000 words used.
+Bank 35:  0000/2000 words used.
+Bank 36:  0000/2000 words used.
+Bank 37:  0000/2000 words used.
+Bank 40:  0000/2000 words used.
+Bank 41:  0000/2000 words used.
+Bank 42:  0000/2000 words used.
+Bank 43:  0000/2000 words used.
+
+
+Symbol Table
+------------
+     1,E:   $17             0017  		     2,E:   $3              0003  		     3,E:   $4              0004  		     4,E:   $5              0005  
+     5,E:   $6              0006  		     6,E:   $7              0007  		     7,C:   A            0000000  		     8,F:   AD12524         4635  
+     9,F:   AD12525         4633  		    10,F:   AD25252         4632  		    11,F:   AD37777         4634  		    12,F:   AD40000         4640  
+    13,F:   AD52525         4636  		    14,F:   AD65252         4637  		    15,F:   AD65253         4641  		    16,F:   ADcode          4626  
+    17,C:   ADk          0000145  		    18,F:   ADmin1          4631  		    19,F:   ADplus0         4627  		    20,F:   ADplus1         4630  
+    21,C:   ADtst        0000007  		    22,F:   ALLDONE         4064  		    23,C:   ARUPT        0000010  		    24,F:   CCScode         4104  
+    25,F:   CCSdM0          4142  		    26,F:   CCSdM1          4141  		    27,F:   CCSdM2          4140  		    28,F:   CCSdP0          4143  
+    29,F:   CCSdP1          4144  		    30,F:   CCSdP2          4145  		    31,C:   CCSk         0000135  		    32,F:   CCSkM0          4134  
+    33,F:   CCSkM1          4133  		    34,F:   CCSkM2          4132  		    35,F:   CCSkP0          4135  		    36,F:   CCSkP1          4136  
+    37,F:   CCSkP2          4137  		    38,C:   CCStst       0000002  		    39,F:   CScode          4442  		    40,F:   CSkM0           4444  
+    41,F:   CSkP0           4443  		    42,F:   CSkalt1         4445  		    43,F:   CSkalt2         4446  		    44,C:   CStst        0000005  
+    45,F:   INDEXcode       4105  		    46,C:   INDEXtst     0000003  		    47,F:   INDXbas         4273  		    48,F:   INDXlop         4306  
+    49,F:   INDXst          4272  		    50,C:   INDXval      0000136  		    51,C:   L            0000001  		    52,F:   MASK1           4740  
+    53,F:   MASK2           4741  		    54,F:   MASKcode        4737  		    55,C:   MASKtst      0000010  		    56,F:   MASKval         4742  
+    57,C:   NEWJOB       0000067  		    58,F:   O37774          4066  		    59,C:   OVFCNTR      0000034  		    60,F:   PASS         01,2345  
+    61,F:   PASScode        4126  		    62,C:   Q            0000002  		    63,C:   QRUPT        0000012  		    64,F:   Qtest           4106  
+    65,C:   START        0000000  		    66,F:   STARTUP         4063  		    67,C:   STRTcode     0000134  		    68,F:   T3RUPT          4054  
+    69,F:   TCcode          4103  		    70,F:   TCjmp1          4115  		    71,F:   TCret1          4114  		    72,C:   TCtst        0000001  
+    73,C:   TIME3        0000026  		    74,F:   TScode          4506  		    75,C:   TSk          0000144  		    76,F:   TSkM1           4514  
+    77,F:   TSkP1           4513  		    78,F:   TSmone          4512  		    79,F:   TSmzero         4511  		    80,F:   TSone           4507  
+    81,C:   TStst        0000006  		    82,F:   TSzero          4510  		    83,F:   XCHcode         4324  		    84,F:   XCHfM0          4326  
+    85,F:   XCHfP0          4325  		    86,F:   XCHfalt1        4327  		    87,F:   XCHfalt2        4330  		    88,C:   XCHkM0       0000141  
+    89,C:   XCHkP0       0000140  		    90,C:   XCHkalt1     0000142  		    91,C:   XCHkalt2     0000143  		    92,C:   XCHtst       0000004  
+    93,F:   begin           4100  		    94,F:   chkAD           4642  		    95,F:   chkCCS          4146  		    96,F:   chkCS           4447  
+    97,F:   chkINDEX        4301  		    98,F:   chkMASK         4743  		    99,F:   chkTC           4107  		   100,F:   chkTS           4515  
+   101,F:   chkXCH          4331  		   102,C:   curtest      0000132  		   103,F:   end             4077  		   104,F:   fail            4075  
+   105,F:   finish          4127  		   106,F:   goMAIN          4067  		   107,F:   lCCS1           4161  		   108,F:   lCCS2           4176  
+   109,F:   lCCS3           4227  		   110,F:   lCCS4           4244  		   111,F:   lCCS5           4261  		   112,F:   lTS1            4527  
+   113,F:   lTS2            4547  		   114,C:   savQ         0000133  		
+
+Unresolved symbols:  0
+Fatal errors:  0
+Warnings:  0
+Removing the duplicated lines... 
+
+Symbol-table file written.
+
