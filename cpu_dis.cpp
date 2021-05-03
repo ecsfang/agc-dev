@@ -60,16 +60,21 @@ void CCpu::dispReg(WINDOW *win)
 //    mvwprintw(win, 2, 15, "  EMEM: %05o [%04o]", mem.read(k10), k10 );
 //    mvwprintw(win, 2, 15, "  FMEM: %05o", mem.read(k12), k12 );
 
+    y1 = 0;
+    for( r=0; r<8; r++, y1++ ) {
+        mvwprintw(win, y1, 40, "%05o: %05o", mwAddr+r, mem.read12(mwAddr+r) & MASK_15_BITS);
+    }
+
     y+=2;
 
     if( k10 > 0 )
-        mvwprintw(win, y, 0, "[MEM10(k)] %04o [%05o] -> %05o", k10-1,  mem.addr2mem(k10-1), mem.read12(k10-1) );
+        mvwprintw(win, y, 0, "[MEM10(k)] %04o [%05o] -> %05o", k10-1,  mem.addr2mem(k10-1), mem.read12(k10-1) & MASK_15_BITS );
     y++;    
-    mvwprintw(win, y++, 0, "[MEM10(k)] %04o [%05o] -> %05o", k10,  mem.addr2mem(k10), mem.read12(k10) );
+    mvwprintw(win, y++, 0, "[MEM10(k)] %04o [%05o] -> %05o", k10,  mem.addr2mem(k10), mem.read12(k10) & MASK_15_BITS );
     if( k12 > 0 )
-        mvwprintw(win, y, 0, "[MEM12(k)] %04o [%05o] -> %05o", k12-1,  mem.addr2mem(k12-1), mem.read12(k12-1) );
+        mvwprintw(win, y, 0, "[MEM12(k)] %04o [%05o] -> %05o", k12-1,  mem.addr2mem(k12-1), mem.read12(k12-1) & MASK_15_BITS );
     y++;
-    mvwprintw(win, y++, 0, "[MEM12(k)] %04o [%05o] -> %05o", k12,  mem.addr2mem(k12), mem.read12(k12) );
+    mvwprintw(win, y++, 0, "[MEM12(k)] %04o [%05o] -> %05o", k12,  mem.addr2mem(k12), mem.read12(k12) & MASK_15_BITS );
 
     if( idx > 0 ) {
         mvwprintw(win, y++, 0, " IDX [%04o] -> [%05o] -> %05o", idx,  mem.addr2mem(k10+idx), mem.read12(k10+idx) );

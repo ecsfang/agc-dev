@@ -18,13 +18,18 @@
 
 #define ERR_ADDR    0xFFFF
 
-#define POS_ZERO    000000
-#define NEG_ZERO    077777
-#define POS_ONE     000001
-#define NEG_ONE     077776
+#define POS_ZERO     000000
+#define NEG_ZERO     077777
+#define POS_ONE      000001
+#define NEG_ONE      077776
 
-#define IS_POS(x) (((x)&0x4000) == 0)
-#define IS_NEG(x) (((x)&0x4000) != 0)
+#define S1_MASK             (1<<14)
+#define S2_MASK             (1<<15)
+#define OVF_MASK            (1<<16)
+#define MANTISSA_MASK       (MASK_15_BITS>>1)
+
+#define IS_POS(x) (((x)&S1_MASK) == 0)
+#define IS_NEG(x) (((x)&S1_MASK) != 0)
 
 #define TOTAL_SIZE  (8 * ERASABLE_BLK_SIZE + 38 * FIXED_BLK_SIZE)
 
@@ -231,10 +236,11 @@ public:
         printf("(read IO:%o!) ", io);
         return 0;
     }
+#define SIGN_EXTEND(w) ((w & MASK_15_BITS) | ((w << 1) & S2_MASK))
     __uint16_t  read(__uint16_t addr) {
         if( addr >= 04000 && addr < 010000 )
             addr += 010000;
-        return addr < TOTAL_SIZE ? mem.word[addr] : 0;
+        return addr < TOTAL_SIZE ? SIGN_EXTEND(mem.word[addr]) : 0;
     }
     __uint16_t  read12(__uint16_t addr) {
         __uint16_t _addr = addr2mem(addr);

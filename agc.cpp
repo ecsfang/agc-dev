@@ -366,15 +366,27 @@ int main(int argc, char *argv[])
             break;
         case 'b':
             {
-                char mesg[]="Enter an address:";
+                char mesg[]="Breakpoint address:";
                 char buf[80];
                 int row, col;
                 int br = 0;
-                mvwprintw(myWindow,13,0,"%s", mesg);
+                mvwprintw(myWindow,15,0,"%s", mesg);
                 getstr(buf);
                 sscanf(buf, "%o", &br);
                 brAddr = (uint16_t)br;
                 cpu.setBrkp(brAddr);
+            }
+            break;
+        case 'm':
+            {
+                char mesg[]="Memory address:";
+                char buf[80];
+                int row, col;
+                int br = 0;
+                mvwprintw(myWindow,15,0,"%s", mesg);
+                getstr(buf);
+                sscanf(buf, "%o", &br);
+                cpu.memWatch(br);
             }
             break;
         case 'p':

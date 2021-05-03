@@ -147,6 +147,7 @@ int CCpu::op1ex(void)
         // Double divide
 //        pDis += sprintf(disBuf+pDis, "DV %04o", k12);
         SimulateDV(mem.getA(), mem.getL(), k12);
+        bOF = false;
         break;
     default:
         // BZF K
@@ -175,6 +176,7 @@ int CCpu::op2ex(void)
         mem.write(k10,x);   // Re-write k
         a = a-x;
         mem.setA(a);
+        bOF = false;
         ret = 0;
         break;
     case 01:
@@ -190,12 +192,15 @@ int CCpu::op2ex(void)
     case 02:
         // AUG
         x = SignExtend(mem.read(k10));
+        fprintf(logFile," AUG: %05o --> ", x);
         if( IS_POS(x) )
             x = AddSP16(x, POS_ONE);
         else
-            x = AddSP16(x, NEG_ONE);
-        bOF = ValueOverflowed(x) != POS_ZERO;
-        mem.write(k10,OverflowCorrected(x));
+            x = AddSP16(x, SignExtend(NEG_ONE));
+        bOF |= ValueOverflowed(x) != POS_ZERO;
+        mem.write(k10,bOF ? OverflowCorrected(x) : x);
+        fprintf(logFile,"%c (%05o) %05o\n", bOF ? '*':' ', x, OverflowCorrected(x));
+        ret = 0;
         break;
     case 03:
         // DIM
@@ -206,7 +211,7 @@ int CCpu::op2ex(void)
         else if( IS_NEG(x) && (x&MASK_15_BITS) != NEG_ZERO )
             x = AddSP16(x, POS_ONE);
         fprintf(logFile,"%05o [%05o]\n", x, OverflowCorrected(x));
-        bOF = ValueOverflowed(x) != POS_ZERO;
+        bOF |= ValueOverflowed(x) != POS_ZERO;
         mem.write(k10,k10 < REG_EB ? x : OverflowCorrected(x));
         break;
     }
@@ -239,6 +244,7 @@ int CCpu::op3ex(void)
         mem.write(k12-1, k1); // Update (K)!
     if( IS_EDIT_REG(k12) )
         mem.write(k12, k2); // Update (K)!
+    bOF = false;
     return 0;
 }
 
@@ -267,6 +273,7 @@ int CCpu::op4ex(void)
         mem.write(k12-1, k1); // Update (K)!
     if( IS_EDIT_REG(k12) )
         mem.write(k12, k2); // Update (K)!
+    bOF = false;
     return 0;
 }
 
@@ -369,6 +376,7 @@ int CCpu::op7ex(void)
 	    setA(SignExtend (MsWord));
 	    setL(SignExtend (LsWord));
 	}
+    bOF = false;
     return 0;
 }
 
@@ -527,6 +535,7 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
             mem.write(k10-1, Msw);
         else
             mem.write(k10-1, OverflowCorrected(Msw));
+        bOF = false;
         break;
     case 01:
         l = mem.getL();
@@ -563,6 +572,8 @@ int CCpu::op3(void)
     setA(k);
     if( IS_EDIT_REG(k10) )
         mem.write(k12, k); // Update (K)!
+    if( k12 != REG_A && k12 != REG_Q )
+        bOF = false;
     return 0;
 }
 
@@ -572,8 +583,10 @@ int CCpu::op4(void)
     // the contents of a memory location into the accumulator.
     uint16_t k = SignExtend(mem.read12(k12));
     setA(SignExtend((~k) & NEG_ZERO));
-    if( IS_EDIT_REG(k10) )
-        mem.write(k10, k); // Update (k)!
+    if( IS_EDIT_REG(k12) )
+        mem.write(k12, k); // Update (k)!
+    if( k12 != REG_A )
+        bOF = false;
     return 0;
 }
 
@@ -629,6 +642,7 @@ int CCpu::op5(void)
             mem.write(1,x1);
             */
         }
+        bOF = false;
         ret = 0;
         break;
     case 02:
@@ -655,6 +669,7 @@ int CCpu::op5(void)
                 mem.write(k10,a);
             }
         }
+        bOF = false;
         ret = 0;
         break;
     case 03:
@@ -683,7 +698,7 @@ int CCpu::op6(void)
     __uint16_t a = mem.getA();
     
     // AD - add and update overflow
-    mem.write(0, add1st(a, SignExtend(m)));
+    mem.write(0, add1st(SignExtend(a), SignExtend(m)));
     if( IS_EDIT_REG(k10) )
         mem.write(k12, m); // Update (K)!
     ret = 0;

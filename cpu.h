@@ -23,6 +23,8 @@ class CCpu {
     char        disBuf[256];
     int         pDis;
     bool        bps[TOTAL_SIZE];
+    uint16_t    mwAddr;
+
 public:
     CCpu() {
         mem.read(04000);
@@ -32,11 +34,16 @@ public:
         idx = 0;
         bOF = false;
         memset(bps,0,TOTAL_SIZE*sizeof(bool));
+        mwAddr = 0;
 //        mem.init();
     }
     // Set breakpoint in memory
     void setBrkp(uint16_t bp) {
         bps[bp] = true;
+    }
+    // Set breakpoint in memory
+    void memWatch(uint16_t mw) {
+        mwAddr = mw;
     }
     uint16_t ovf_corr(uint16_t ov) {
         return OF() ? (ov & 0x3FFF) | s2 : ov;
@@ -44,7 +51,7 @@ public:
     void readCore(char *core);
     // Read opcode
     __uint16_t getOP(bool bUpdate=true, int offs=0) {
-        opc = mem.getOP(offs);
+        opc = mem.getOP(offs) & MASK_15_BITS;
         if( bUpdate )
             opc += idx;
         k12 = opc & MASK_12B_ADDRESS;
@@ -59,7 +66,7 @@ public:
     }
     __uint16_t add1st(__uint16_t x1, __uint16_t x2)
     {
-        s2 = x1 & 0x4000;
+        s2 = x1 & 040000;
         __uint16_t s = AddSP16(x1,x2);
         __uint16_t cs;
 
@@ -67,7 +74,7 @@ public:
 
 //        if( s & 0x8000 )
 //            s++;
-        bOF = s2 != (s & 0x4000);
+        bOF |= s2 != (s & 0x4000);
         cs = s;
         //printf("(s2:%d s1:%d of:%d)", s2 ? 1:0, (s&0x4000)?1:0, );
         if( bOF ) {
@@ -81,7 +88,7 @@ public:
     void setA(uint16_t a) {
         mem.setA(a);
         s2 = a & 0x4000;
-        bOF = false;
+        //bOF = false;
     }
     void setL(uint16_t l) {
         mem.setL(l);
@@ -132,62 +139,63 @@ public:
     void dispReg(WINDOW *win);
 
     int16_t OverflowCorrected (int Value) {
-        return ((Value & 037777) | ((Value >> 1) & 040000));
+        return ((Value & MANTISSA_MASK) | ((Value >> 1) & S1_MASK));
     }
 
     // Sign-extend a 15-bit SP value so that it can go into the 16-bit (plus parity)
     // accumulator.
     int SignExtend (int16_t Word) {
-        return ((Word & 077777) | ((Word << 1) & 0100000));
+        return ((Word & MASK_15_BITS) | ((Word << 1) & S2_MASK));
     }
 
     int16_t ValueOverflowed (int Value) {
-        switch (Value & 0140000) {
-        case 0040000:
+        switch (Value & (S1_MASK|S2_MASK)) {
+        case S1_MASK:
             return (POS_ONE);
-        case 0100000:
+        case S2_MASK:
             return (NEG_ONE);
         default:
             return (POS_ZERO);
         }
     }
     // Adds two sign-extended SP values.  The result may contain overflow.
-    int AddSP16 (int Addend1, int Addend2) {
-        int Sum;
+    uint16_t AddSP16 (uint32_t Addend1, uint32_t Addend2) {
+        uint32_t Sum;
         Sum = Addend1 + Addend2;
-        if (Sum & 0200000) {
+        if (Sum & OVF_MASK) {
             Sum += POS_ONE;
-            Sum &= 0177777;
+            Sum &= MASK_16_BITS;
         }
+        fprintf(logFile,"AddSP16: %05o + %05o = %05o\n", Addend1, Addend2, Sum);
         return (Sum);
     }
     void SimulateDV(uint16_t a, uint16_t l, uint16_t divisor);
-    int agc2cpu (int Input)
-{
-  if (0 != (040000 & Input))
-    return (-(037777 & ~Input));
-  else
-    return (037777 & Input);
-}
 
-    int cpu2agc2 (int Input)
-{
-  if (Input < 0)
-    return (03777777777 & ~(01777777777 & (-Input)));
-  else
-    return (01777777777 & Input);
-}
+    int agc2cpu(int Input)
+    {
+        if (0 != (S1_MASK & Input))
+            return (-(MANTISSA_MASK & ~Input));
+        else
+            return (MANTISSA_MASK & Input);
+    }
 
-    void DecentToSp (int Decent, int16_t * LsbSP)
-{
-  int Sign;
-  Sign = (Decent & 04000000000);
-  *LsbSP = (037777 & Decent);
-  if (Sign)
-    *LsbSP |= 040000;
-  LsbSP[-1] = OverflowCorrected (0177777 & (Decent >> 14));	// Was 13.
-}
+    int cpu2agc2(int Input)
+    {
+        if (Input < 0)
+            return (03777777777 & ~(01777777777 & (-Input)));
+        else
+            return (01777777777 & Input);
+    }
 
+    void DecentToSp(int Decent, int16_t *LsbSP)
+    {
+        int Sign;
+        Sign = (Decent & 04000000000);
+        *LsbSP = (MANTISSA_MASK & Decent);
+        if (Sign)
+            *LsbSP |= S1_MASK;
+        LsbSP[-1] = OverflowCorrected(MASK_16_BITS & (Decent >> 14)); // Was 13.
+    }
 };
 
 #endif//__CPU_H__
