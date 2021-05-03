@@ -9,6 +9,9 @@
 #define MASK_12B_ADDRESS    07777
 #define MASK_10B_ADDRESS    01777
 #define MASK_IO_ADDRESS     00777
+#define MASK_16_BITS        0177777
+#define MASK_15_BITS        077777
+#define MASK_12_BITS        07777
 
 #define OPCODE_MASK         070000  // Bit 13, 14 and 15
 #define QC_MASK             006000  // Bit 11 and 12
@@ -20,6 +23,9 @@
 #define POS_ONE     000001
 #define NEG_ONE     077776
 
+#define IS_POS(x) (((x)&0x4000) == 0)
+#define IS_NEG(x) (((x)&0x4000) != 0)
+
 #define TOTAL_SIZE  (8 * ERASABLE_BLK_SIZE + 38 * FIXED_BLK_SIZE)
 
 #define EB_MASK     003400 // 000 0EE E00 000 000
@@ -29,6 +35,12 @@
 #define FB_SHIFT        10
 
 #define BB_MASK     076007 // FFF FF0 000 000 EEE
+
+#define CYR_REG      0020
+#define SR_REG       0021
+#define CYL_REG      0022
+#define EDOP_REG     0023
+#define IS_EDIT_REG(a) ((a) >= CYR_REG && (a) <= EDOP_REG)
 
 #define BOOT        04000   // Power-up or GOJ signal.
                             // This is where the program begins executing at power-up, and where hardware resets cause execution to go.
@@ -53,6 +65,16 @@
 #define RUPT10      04050   // aka HANDRUPT
                             // Selectable from three possible sources:
                             // Trap 31A, Trap 31B, and Trap 32.
+
+enum {
+    REG_A,
+    REG_L,
+    REG_Q,
+    REG_EB,
+    REG_FB,
+    REG_Z,
+    REG_BB
+};
 
 typedef union {
     struct {
@@ -138,6 +160,12 @@ public:
     __uint16_t getA(void) {
         return mem.A;
     }
+    void setL(__uint16_t acc) {
+        mem.L = acc;
+    }
+    __uint16_t getL(void) {
+        return mem.L;
+    }
     void setQ(__uint16_t rtn) {
         mem.Q = rtn;
     }
@@ -172,6 +200,20 @@ public:
                     if( addr >= 04000 && addr < 010000 )
                         addr += 010000;
                     //printf("mem[%05o] = %05o\n", addr, data);
+                    switch(addr) {
+                        case CYR_REG:
+                            data = (((data & 0x7FFF) >> 1 ) | (data << 14) ) & 0x7FFF;
+                            break;
+                        case SR_REG:
+                            data = ((data & 0x4000) | (data >> 1)) & 0x7FFF;
+                            break;
+                        case CYL_REG:
+                            data = (((data & 0x4000) >> 14 ) | (data << 1)) & 0x7FFF;
+                            break;
+                        case EDOP_REG:
+                            data = (data >> 8) & 0x7F;
+                            break;
+                    }
                     mem.word[addr] = data;
             }
         }

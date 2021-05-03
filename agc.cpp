@@ -73,6 +73,7 @@ int main(int argc, char *argv[])
 */
 
 //#define DO_TEST
+#ifdef DO_TEST
 void prtBin(__uint16_t x)
 {
     for(int b=14; b>=0; b--) {
@@ -90,24 +91,6 @@ void prt1st(__uint16_t x)
     fprintf(logFile, ") [%c", bNeg ? '-' : '+');
     fprintf(logFile, "%5d]", d);
 }
-/*
-__uint16_t add1st(__uint16_t x1, __uint16_t x2, bool *bOF)
-{
-    __uint16_t s2 = (x1 & 0x4000) << 1;
-    __uint16_t s = x1 + x2;
-
-    if( s & 0x8000 )
-        s++;
-    *bOF = (s2>>1) != (s & 0x4000);
-    //printf("(s2:%d s1:%d of:%d)", s2 ? 1:0, (s&0x4000)?1:0, );
-    if( *bOF ) {
-        s &= 0x3FFF;
-        s |= s2 ? 0x4000 : 0;
-    }
-    fprintf(logFile,"1stADD: %05o + %05o = %05o (S1:%d S2:%d)\n", x1, x2, s, s&0x4000?1:0, s2&0x8000?1:0);
-    fflush(logFile);
-    return (s & 0x7FFF) | s2;
-}***/
 
 void testAdd(__uint16_t x1, __uint16_t x2)
 {
@@ -120,11 +103,183 @@ void testAdd(__uint16_t x1, __uint16_t x2)
         fprintf(logFile, "Overflow!");
     fprintf(logFile, "\n");
 }
+
+double btof(uint16_t x1, uint16_t x2)
+{
+    double r = 0.0;
+    bool bNeg = false;
+    double n = 0.5;
+    if( IS_NEG(x1) ) {
+        bNeg = true;
+        x1 = (~x1) & 0x7FFF;
+    }
+    for(int b=13; b>=0; b--) {
+        if( (x1>>b)&1 )
+            r += n;
+        n /= 2;
+    }
+    if( bNeg )
+        r = -r;
+
+    bNeg = false;
+    if( IS_NEG(x2) ) {
+        bNeg = true;
+        x2 = (~x2) & 0x7FFF;
+    }
+    for(int b=13; b>=0; b--) {
+        if( (x2>>b)&1 )
+            r += bNeg ? -n : n;
+        n /= 2;
+    }
+
+    return r;
+}
+
+uint16_t ftob(double f, uint16_t *remain)
+{
+    uint16_t r1 = 0;
+    uint16_t r2 = 0;
+    double of = f;
+    double rf;
+    bool bNeg = false;
+    if( f < 0){
+        bNeg = true;
+        f = -f;
+    }
+    for(int n=0; n<14; n++) {
+        r1 <<= 1;
+        f = f*2;
+        if( f>=1.0 ) {
+            r1 |= 1;
+            f -= 1.0;
+        }
+    }
+    for(int n=0; n<14; n++) {
+        r2 <<= 1;
+        f = f*2;
+        if( f>=1.0 ) {
+            r2 |= 1;
+            f -= 1.0;
+        }
+    }
+    if( bNeg ) {
+        r1 = (~r1) & 0x7FFF;
+        r2 = (~r2) & 0x7FFF;
+    }
+    *remain = r2;
+    return r1;
+ }
+
+void testDiv(__uint16_t x1, __uint16_t x2, uint16_t k)
+{
+    CCpu    tst;
+    bool of;
+    double f = btof(x1, x2);
+    double div = btof(k, 0);
+    fprintf(logFile, "\n  %05o %05o -> %lf", x1, x2, f);
+    fprintf(logFile, "\n        %05o -> %lf", k, div);
+    double quo = f / div;
+    uint16_t r1, r2;
+    r1 = ftob(quo, &r2);
+//    x2 = div - (x1*k);
+    fprintf(logFile, "\n---------------------\n/ %05o %05o -> %lf", r1, r2, quo);
+    fprintf(logFile, "\n");
+}
+
+//----------------------------------------------------------------------------
+// This function implements a model of what happens in the actual AGC hardware
+// during a divide -- but made a bit more readable / software-centric than the 
+// actual register transfer level stuff. It should nevertheless give accurate
+// results in all cases, including those that result in "total nonsense".
+// If A, L, or Z are the divisor, it assumes that the unexpected transformations
+// have already been applied to the "divisor" argument.
+static void
+SimulateDV(uint16_t a, uint16_t l, uint16_t divisor)
+{
+    uint16_t dividend_sign = 0;
+    uint16_t divisor_sign = 0;
+    uint16_t remainder;
+    uint16_t remainder_sign = 0;
+    uint16_t quotient_sign = 0;
+    uint16_t quotient = 0;
+    uint16_t sum = 0;
+    int i;
+
+    // Assume A contains the sign of the dividend
+    dividend_sign = a & 0100000;
+
+    // Negate A if it was positive
+    if (!dividend_sign)
+      a = ~a;
+    // If A is now -0, take the dividend sign from L
+    if (a == 0177777)
+      dividend_sign = l & 0100000;
+    // Negate L if the dividend is negative.
+    if (dividend_sign)
+      l = ~l;
+
+    // Add 40000 to L
+    l = AddSP16(l, 040000);
+    // If this did not cause positive overflow, add one to A
+    if (ValueOverflowed(l) != POS_ONE)
+      a = AddSP16(a, 1);
+    // Initialize the remainder with the current value of A
+    remainder = a;
+
+    // Record the sign of the divisor, and then take its absolute value
+    divisor_sign = divisor & 0100000;
+    if (divisor_sign)
+      divisor = ~divisor;
+    // Initialize the quotient via a WYD on L (L's sign is placed in bits
+    // 16 and 1, and L bits 14-1 are placed in bits 15-2).
+    quotient_sign = l & 0100000;
+    quotient = quotient_sign | ((l & 037777) << 1) | (quotient_sign >> 15);
+
+    for (i = 0; i < 14; i++)
+    {
+        // Shift up the quotient
+        quotient <<= 1;
+        // Perform a WYD on the remainder
+        remainder_sign = remainder & 0100000;
+        remainder = remainder_sign | ((remainder & 037777) << 1);
+        // The sign is only placed in bit 1 if the quotient's new bit 16 is 1
+        if ((quotient & 0100000) == 0)
+          remainder |= (remainder_sign >> 15);
+        // Add the divisor to the remainder
+        sum = AddSP16(remainder, divisor);
+        if (sum & 0100000)
+          {
+            // If the resulting sum has its bit 16 set, OR a 1 onto the
+            // quotient and take the sum as the new remainder
+            quotient |= 1;
+            remainder = sum;
+          }
+    }
+    // Restore the proper quotient sign
+    a = quotient_sign | (quotient & 077777);
+
+    // The final value for A is negated if the dividend sign and the
+    // divisor sign did not match
+    uint16_t ra = (dividend_sign != divisor_sign) ? ~a : a;
+    // The final value for L is negated if the dividend was negative
+    uint16_t rl = (dividend_sign) ? remainder : ~remainder;
+
+    double f = btof(a, l);
+    double div = btof(divisor, 0);
+    fprintf(logFile, "\n  %05o %05o -> %lf", a, l, f);
+    fprintf(logFile, "\n        %05o -> %lf", divisor, div);
+//    double quo = f / div;
+//    uint16_t r1, r2;
+//    r1 = ftob(quo, &r2);
+    fprintf(logFile, "\n---------------------\n/ %05o %05o", ra, rl); //, quo);
+    fprintf(logFile, "\n");
+}
+
 void test1st(void)
 {
     __uint16_t x1, x2;
     bool of;
-    testAdd(002000, 006000);
+/*    testAdd(002000, 006000);
     testAdd(022000, 026000);
     testAdd(074000, 070000);
     testAdd(054000, 050000);
@@ -134,8 +289,29 @@ void test1st(void)
     testAdd(037777, 000001);
     testAdd(000001, 037777);
     testAdd(040000, 040000);
+*/
+    SimulateDV(017777, 040000, 020000);
+    SimulateDV(017777, 040000, 057777);
+    SimulateDV(060000, 037777, 020000);
+    SimulateDV(060000, 037777, 057777);
+    SimulateDV(017777, 037777, 020000);
+    SimulateDV(037776, 000000, 037776);
+    SimulateDV(000000, 077777, 000000);
+    SimulateDV(000000, 077777, 077777);
+    SimulateDV(077777, 000000, 000000);
+    SimulateDV(077777, 077777, 077777);
 }
+#endif
 
+void updateScreen(WINDOW *wnd, CCpu *cpu, bool bRun)
+{
+    cpu->dispReg(wnd);
+    if( !bRun ) {
+        for(int n=0; n<5; n++)
+            mvwprintw(wnd,16+n,0,"%s           ", cpu->disasm(n-1));
+    }
+    refresh();			    /* Print it on to the real screen */
+}
 
 int main(int argc, char *argv[])
 {
@@ -149,17 +325,18 @@ int main(int argc, char *argv[])
     char key;
     cpu.readCore(argv[1]);
     bool bRunning = false;
+    uint16_t brAddr = 0;
+
     fprintf(logFile,"Starting!\n");
 
     WINDOW *myWindow = initscr();			/* Start curses mode 		  */
     noecho();
     do {
-        cpu.dispReg(myWindow);
-        if( !bRunning ) {
-            for(int n=0; n<5; n++)
-                mvwprintw(myWindow,14+n,0,"%s", cpu.disasm(n-1));
+        if( brAddr == cpu.getPC() ) {
+            bRunning = false;
+            nodelay(myWindow, false);
         }
-        refresh();			    /* Print it on to the real screen */
+        updateScreen(myWindow, &cpu, bRunning);
 	    key = getch();			/* Wait for user input */
         if( bRunning && key == 'b' ) {
             bRunning = false;
@@ -171,6 +348,7 @@ int main(int argc, char *argv[])
         } else {
             mvwprintw(myWindow,12,0,"                ");
         }
+
         switch( key ) {
         case -1:
             if( !bRunning )
@@ -183,14 +361,35 @@ int main(int argc, char *argv[])
         case 'r':
             timeout(-1);
             bRunning = true;
-            //nodelay(myWindow, true);
-            halfdelay(1);
+            nodelay(myWindow, true);
+            //halfdelay(1);
             break;
+        case 'b':
+            {
+                char mesg[]="Enter an address:";
+                char buf[80];
+                int row, col;
+                int br = 0;
+                mvwprintw(myWindow,13,0,"%s", mesg);
+                getstr(buf);
+                sscanf(buf, "%o", &br);
+                brAddr = (uint16_t)br;
+                cpu.setBrkp(brAddr);
+            }
+            break;
+        case 'p':
+            {
+                char mesg[]="Enter new PC:";
+                char buf[80];
+                int row, col;
+                int pc = 0;
+                mvwprintw(myWindow,12,0,"%s", mesg);
+                getstr(buf);
+                sscanf(buf, "%o", &pc);
+                cpu.setPC(pc);
+            }
+
         };
-//        cpu.dispReg(myWindow);
-//        mvwprintw(myWindow,14,0,"%s", cpu.disasm(-1));
-//        mvwprintw(myWindow,15,0,"%s", cpu.disasm());
-//        mvwprintw(myWindow,16,0,"%s", cpu.disasm(+1));
     } while(key != 'q');
 	endwin();			/* End curses mode		  */
 #endif
