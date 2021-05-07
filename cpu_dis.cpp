@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include "cpu.h"
+#include <map>
+
+using namespace std;
 
 typedef struct {
     const char *name;
@@ -33,6 +36,31 @@ Reg_t   regs[] = {
     { NULL, 0, 0 }
 };
 
+extern map<uint16_t,char*> symTab;
+
+char *CCpu::mAddr(uint16_t a)
+{
+    char *lbl = NULL;
+    map<uint16_t, char*>::iterator it;
+    it = symTab.find(mem.addr2mem(a));
+    if( it != symTab.end() )
+        lbl = it->second;
+
+    static char addr[128];
+    switch(a) {
+    case 00000: sprintf(addr, "A"); break;
+    case 00001: sprintf(addr, "L"); break;
+    case 00002: sprintf(addr, "Q"); break;
+    case 00005: sprintf(addr, "Z"); break;
+    default:
+        if( lbl )
+            sprintf(addr, "%04o [%s]", a, lbl);
+        else
+            sprintf(addr, "%04o", a);
+    }
+    return addr;
+}
+
 void CCpu::dispReg(WINDOW *win)
 {
     int y1, y = 0;
@@ -41,14 +69,18 @@ void CCpu::dispReg(WINDOW *win)
     uint16_t r;
     for( ; regs[y].name; y++ ) {
         r = mem.read(regs[y].addr);
-        if( regs[y].addr < REG_Q ) {
+        if( regs[y].addr < REG_EB ) {
             mvwprintw(win, y, 0, "%2s: %d:%05o ", regs[y].name, r & 0100000 ? 1 : 0, r & regs[y].mask);
         } else
             mvwprintw(win, y, 0, "%2s:   %05o ", regs[y].name, r & regs[y].mask);
     }
     y++;
+    mvwprintw(win, y++, 0, "   %6.1f us", clockCnt * 11.7);
+    mvwprintw(win, y++, 0, "%6d %3d MCT", clockCnt, dTime);
+
     y1 = 0;
     mvwprintw(win, y1++, 15, "    OF: [%c]", OF() ? 'X' : ' ' );
+    mvwprintw(win, y1++, 15, " IRUPT: [%c]", bInterrupt ? (bIntRunning ? '-' : 'X') : ' ' );
     mvwprintw(win, y1++, 15, " INDEX: %04o", idx );
     mvwprintw(win, y1++, 15, "   OPC: %o", (opc & 070000) >> 12 );
     mvwprintw(win, y1++, 15, "    QC: %o", qc );
@@ -112,6 +144,9 @@ void CCpu::dis0ex(void)
         case 006000:
             pDis += sprintf(disBuf+pDis, "RXOR %03o", kc);
             break;
+        case 007000:
+            pDis += sprintf(disBuf+pDis, "EDRUPT %03o", kc);
+            break;
         default:
             pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", opc);
     }
@@ -124,66 +159,71 @@ void CCpu::dis1ex(void)
     switch( qc ) {
     case 00:
         // Double divide
-        pDis += sprintf(disBuf+pDis, "DV %04o", k12);
+        pDis += sprintf(disBuf+pDis, "DV %s", mAddr(k12));
         break;
     default:
         // BZF K
-        pDis += sprintf(disBuf+pDis, "BZF %05o", k12);
+        pDis += sprintf(disBuf+pDis, "BZF %s", mAddr(k12));
     }
 }
+
 
 void CCpu::dis2ex(void)
 {
     switch( qc ) {
     case 00:
-        pDis += sprintf(disBuf+pDis, "MSU %04o", k10);
+        pDis += sprintf(disBuf+pDis, "MSU");
         break;
     case 01:
-        pDis += sprintf(disBuf+pDis, "QXCH %05o", k12);
+        pDis += sprintf(disBuf+pDis, "QXCH");
         break;
     case 02:
-        pDis += sprintf(disBuf+pDis, "AUG %05o", k10);
+        pDis += sprintf(disBuf+pDis, "AUG");
         break;
     case 03:
-        pDis += sprintf(disBuf+pDis, "DIM %04o", k10);
+        pDis += sprintf(disBuf+pDis, "DIM");
         break;
     }
+    pDis += sprintf(disBuf+pDis, " %s", mAddr(k10));
 }
 
 void CCpu::dis3ex(void)
 {
     // The "Double Clear and Add" (or "Clear and Add Erasable" or "Clear and Add Fixed") instruction moves
     // the contents of a memory location into the accumulator.
-     pDis += sprintf(disBuf+pDis, "DCA %05o", k12);
+     pDis += sprintf(disBuf+pDis, "DCA %s", mAddr(k12-1));
 }
 
 void CCpu::dis4ex(void)
 {
     // The "Double Clear and Subtract" (or "Clear and Subtract Erasable" or "Clear and Subtract Fixed") instruction moves
     // the contents of a memory location into the accumulator.
-    pDis += sprintf(disBuf+pDis, "DCS %05o", k12);
+    pDis += sprintf(disBuf+pDis, "DCS %s", mAddr(k12-1));
 }
 
 void CCpu::dis5ex(void)
 {
-    pDis += sprintf(disBuf+pDis, "NDX %05o", k12);
+    pDis += sprintf(disBuf+pDis, "NDX %s", mAddr(k12));
 }
 
 void CCpu::dis6ex(void)
 {
     switch( qc ) {
     case 00:
-        pDis += sprintf(disBuf+pDis, "SU %04o", k10);
+        pDis += sprintf(disBuf+pDis, "SU %s", mAddr(k10));
         break;
     default:
-        pDis += sprintf(disBuf+pDis, "BZMF %05o", k12);
+        pDis += sprintf(disBuf+pDis, "BZMF %s", mAddr(k12));
         break;
     }
 }
 
 void CCpu::dis7ex(void)
 {
-    pDis += sprintf(disBuf+pDis, "MP %05o", k12);
+    if( k12 == 00000 )
+        pDis += sprintf(disBuf+pDis, "SQUARE");
+    else
+        pDis += sprintf(disBuf+pDis, "MP %s", mAddr(k12));
 }
 
 //******************************************************************
@@ -191,6 +231,9 @@ void CCpu::dis7ex(void)
 void CCpu::dis0(void)
 {
     switch(opc) {
+    case 000000:
+        pDis += sprintf(disBuf+pDis, "XXALQ");
+        break;
     case 000002:
         pDis += sprintf(disBuf+pDis, "RETURN");
         break;
@@ -203,13 +246,10 @@ void CCpu::dis0(void)
     case 000006:
         pDis += sprintf(disBuf+pDis, "EXTEND");
         break;
+    case 000001:
+        pDis += sprintf(disBuf+pDis, "XLQ/");
     default:
-        if( opc == 000000 )
-            pDis += sprintf(disBuf+pDis, "XXALQ");
-        else if( opc == 000001 )
-            pDis += sprintf(disBuf+pDis, "XLQ");
-        else
-            pDis += sprintf(disBuf+pDis, "TC %05o", k12);
+        pDis += sprintf(disBuf+pDis, "TC %s", mAddr(k12));
     }
 }
 
@@ -222,12 +262,12 @@ void CCpu::dis1(void)
         // be set to +O. If (K) < -0, we take the instruction at I + 3, and (A) will be set
         // to its absolute value less 1. If (K) = -0, we take the instruction at I + 4, and
         // (A) will be set to + 0. CCS always leaves a positive quantity in A. 
-        pDis += sprintf(disBuf+pDis, "CCS %04o", k10);
+        pDis += sprintf(disBuf+pDis, "CCS %s", mAddr(k10));
         break;
     default:
         // The "Transfer Control to Fixed" instruction jumps to a
         // memory location in fixed (as opposed to erasable) memory.
-        pDis += sprintf(disBuf+pDis, "TCF %05o", k12);
+        pDis += sprintf(disBuf+pDis, "TCF %s", mAddr(k12));
     }
 }
 
@@ -239,16 +279,16 @@ void CCpu::dis2(void)
         if( k10 == 000001 )
             pDis += sprintf(disBuf+pDis, "DDOUBLE");
         else
-            pDis += sprintf(disBuf+pDis, "DAS %04o!", k10);
+            pDis += sprintf(disBuf+pDis, "DAS %s", mAddr(k10));
         break;
     case 01:
-        pDis += sprintf(disBuf+pDis, "LXCH %05o[%05o]", mem.addr2mem(k10), k10);
+        pDis += sprintf(disBuf+pDis, "LXCH %s", mAddr(k10));
         break;
     case 02:
-        pDis += sprintf(disBuf+pDis, "INCR %05o[%05o]", mem.addr2mem(k10), k10);
+        pDis += sprintf(disBuf+pDis, "INCR %s", mAddr(k10));
         break;
     case 03:
-        pDis += sprintf(disBuf+pDis, "ADS %04o[%05o]", mem.addr2mem(k10), k10);
+        pDis += sprintf(disBuf+pDis, "ADS %s", mAddr(k10));
         break;
     default:
         pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", opc);
@@ -259,10 +299,12 @@ void CCpu::dis3(void)
 {
     // The "Clear and Add" (or "Clear and Add Erasable" or "Clear and Add Fixed") instruction moves
     // the contents of a memory location into the accumulator.
-    if( qc == 0 )
-        pDis += sprintf(disBuf+pDis, "CAE %04o", k12);
+    if( k12 == 000000 )
+        pDis += sprintf(disBuf+pDis, "NOOP");
+    else if( qc == 0 )
+        pDis += sprintf(disBuf+pDis, "CAE %s", mAddr(k10));
     else
-        pDis += sprintf(disBuf+pDis, "CAF %05o", k12);
+        pDis += sprintf(disBuf+pDis, "CAF %s", mAddr(k12));
 }
 
 void CCpu::dis4(void)
@@ -272,7 +314,7 @@ void CCpu::dis4(void)
     if( opc == 040000 )
         pDis += sprintf(disBuf+pDis, "COM");
     else
-        pDis += sprintf(disBuf+pDis, "CS %05o", k12);
+        pDis += sprintf(disBuf+pDis, "CS %s", mAddr(k12));
 }
 
 void CCpu::dis5(void)
@@ -284,7 +326,7 @@ void CCpu::dis5(void)
         else if( opc == 052006 )
             pDis += sprintf(disBuf+pDis, "DTCB");
         else
-            pDis += sprintf(disBuf+pDis, "DXCH %05o", k10-1);
+            pDis += sprintf(disBuf+pDis, "DXCH %s", mAddr(k10-1));
         break;
     case 02:
         switch(k10) {
@@ -295,14 +337,17 @@ void CCpu::dis5(void)
                 pDis += sprintf(disBuf+pDis, "TCAA");
                 break;
             default:
-                pDis += sprintf(disBuf+pDis, "TS %04o", k10);
+                pDis += sprintf(disBuf+pDis, "TS %s", mAddr(k10));
         }
         break;
     case 03:
-        pDis += sprintf(disBuf+pDis, "XCF %05o", k10);
+        pDis += sprintf(disBuf+pDis, "XCF %s", mAddr(k10));
         break;
     case 00:
-        pDis += sprintf(disBuf+pDis, "INDEX %05o", k10);
+        if( k12 == 00017 )
+            pDis += sprintf(disBuf+pDis, "RESUME");
+        else
+            pDis += sprintf(disBuf+pDis, "INDEX %s", mAddr(k10));
         break;
     default:
         pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", opc);
@@ -314,21 +359,52 @@ void CCpu::dis6(void)
     if( opc == 060000 )
         pDis += sprintf(disBuf+pDis, "DOUBLE");
     else
-        pDis += sprintf(disBuf+pDis, "AD %05o", k12);
+        pDis += sprintf(disBuf+pDis, "AD %s", mAddr(k12));
 }
 
 void CCpu::dis7(void)
 {
-    pDis += sprintf(disBuf+pDis, "MASK %05o", k12);
+    pDis += sprintf(disBuf+pDis, "MASK %s", mAddr(k12));
 }
 
 
 char *CCpu::disasm(int offs)
 {
     pDis = 0;
+    uint16_t zpc = mem.getZ()+offs;
+    uint16_t pc = mem.getPysZ()+offs;
+    uint8_t blk = (pc - 010000) / FIXED_BLK_SIZE;
     getOP(false, offs);
+
+    char ex = bExtracode ? '#':'>';
+
+    if( offs )
+        pDis += sprintf(disBuf+pDis, "          %05o   ", opc);
+    else {
+        if( pc < 04000 ) {
+            // Erasable memory
+            blk = pc / 0400;
+            if( zpc >= 0 && zpc <= 01400 )
+                pDis += sprintf(disBuf+pDis, "[   %04o] %05o %c ", zpc, opc, ex);
+            else
+                pDis += sprintf(disBuf+pDis, "[E%o %04o] %05o %c ", blk, zpc, opc, ex);
+        } else {
+            // Fixed memory
+            if( pc >= 010000 && pc <012000 )
+                blk = 0;
+            else if( pc >= 012000 && pc <014000 )
+                blk = 1;
+            else if( pc >= 004000 && pc <006000 )
+                blk = 2;
+            else if( pc >= 006000 && pc <010000 )
+                blk = 3;
+            if( zpc >= 04000 && zpc < 10000 )
+                pDis += sprintf(disBuf+pDis, "[   %04o] %05o %c ", zpc, opc, ex);
+            else
+                pDis += sprintf(disBuf+pDis, "[%02o,%04o] %05o %c ", blk, zpc, opc, ex);
+        }
+    }
     if( bExtracode && !offs) {
-        pDis += sprintf(disBuf+pDis, "[%04o(%06o)] %05o # ", mem.getZ()+offs, mem.getPysZ()+offs, opc);
         switch( opc & OPCODE_MASK ) {
             case 000000: dis0ex(); break;
             case 010000: dis1ex(); break;
@@ -342,10 +418,27 @@ char *CCpu::disasm(int offs)
                 pDis += sprintf(disBuf+pDis, "Unknown extra code %05o!", opc);
         }
     } else {
-        if( offs )
-            pDis += sprintf(disBuf+pDis, "               %05o   ", opc);
-        else
-            pDis += sprintf(disBuf+pDis, "[%04o(%06o)] %05o > ", mem.getZ()+offs, mem.getPysZ()+offs, opc);
+/*        if( offs )
+            pDis += sprintf(disBuf+pDis, "          %05o   ", opc);
+        else {
+        if( pc < 04000 ) {
+            // Erasable memory
+            blk = pc / 0400;
+            pDis += sprintf(disBuf+pDis, "%05o [E%o %04o] %05o > ", pc, blk, mem.getZ()+offs, opc);
+        } else {
+            // Fixed memory
+            if( pc >= 010000 && pc <012000 )
+                blk = 0;
+            else if( pc >= 012000 && pc <014000 )
+                blk = 1;
+            else if( pc >= 004000 && pc <006000 )
+                blk = 2;
+            else if( pc >= 006000 && pc <010000 )
+                blk = 3;
+            pDis += sprintf(disBuf+pDis, "%05o [%02o,%04o] %05o > ", pc, blk, mem.getZ()+offs, opc);
+        }
+        }*/
+            //pDis += sprintf(disBuf+pDis, "[%04o(%06o)] %05o > ", mem.getZ()+offs, mem.getPysZ()+offs, opc);
         switch( opc & OPCODE_MASK ) {
             case 000000: dis0(); break;
             case 010000: dis1(); break;

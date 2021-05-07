@@ -6,12 +6,16 @@
 
 extern FILE *logFile;
 
+#define POS_OVF() (bOF && s2 == 0)
+#define NEG_OVF() (bOF && s2 != 0)
+
+
 class CCpu {
     CMemory mem;
     bool bExtracode = false;
     bool bClrExtra = true;
     bool bInterrupt = false;
-    bool bStep = false;
+    bool bIntRunning = false;
     __uint16_t  opc;    // The current opcode
     __uint16_t  k12;    // Current 12 bit k value
     __uint16_t  k10;    // Current 10 bit k value
@@ -24,6 +28,11 @@ class CCpu {
     int         pDis;
     bool        bps[TOTAL_SIZE];
     uint16_t    mwAddr;
+    uint32_t    clockCnt;
+    uint16_t    dTime;
+    uint8_t     mct;
+    uint32_t    gInterrupt;
+    uint16_t    nextPC;
 
 public:
     CCpu() {
@@ -35,6 +44,9 @@ public:
         bOF = false;
         memset(bps,0,TOTAL_SIZE*sizeof(bool));
         mwAddr = 0;
+        clockCnt = 0;
+        dTime = 0;
+        gInterrupt = 0;
 //        mem.init();
     }
     // Set breakpoint in memory
@@ -66,11 +78,11 @@ public:
     }
     __uint16_t add1st(__uint16_t x1, __uint16_t x2)
     {
-        s2 = x1 & 040000;
+//        s2 = x1 & 040000;
         __uint16_t s = AddSP16(x1,x2);
         __uint16_t cs;
 
-        fprintf(logFile,"1stADD: s: %05o\n", s);
+//        fprintf(logFile,"1stADD: s: %05o\n", s);
 
 //        if( s & 0x8000 )
 //            s++;
@@ -81,8 +93,8 @@ public:
             // Overflow correction
             cs = ovf_corr(cs);
         }
-        fprintf(logFile,"1stADD: %05o + %05o = %05o %c [%05o] (S2:%d S1:%d)\n", x1, x2, s, bOF?'*':' ', cs, s2&0x4000?1:0, s&0x4000?1:0);
-        fflush(logFile);
+//        fprintf(logFile,"1stADD: %05o + %05o = %05o %c [%05o] (S2:%d S1:%d)\n", x1, x2, s, bOF?'*':' ', cs, s2&0x4000?1:0, s&0x4000?1:0);
+//        fflush(logFile);
         return s; // & 0x7FFF;
     }
     void setA(uint16_t a) {
@@ -96,10 +108,16 @@ public:
     uint16_t getPC(void) {
         return mem.getZ();
     }
+    uint16_t getAbsPC(void) {
+        return mem.getPysZ();
+    }
     void setPC(uint16_t pc) {
         return mem.setZ(pc);
     }
+    char *mAddr(uint16_t a);
+
     int sst(void);
+
     int op0(void);
     int op1(void);
     int op2(void);
@@ -166,7 +184,7 @@ public:
             Sum += POS_ONE;
             Sum &= MASK_16_BITS;
         }
-        fprintf(logFile,"AddSP16: %05o + %05o = %05o\n", Addend1, Addend2, Sum);
+        //fprintf(logFile,"AddSP16: %05o + %05o = %05o\n", Addend1, Addend2, Sum);
         return (Sum);
     }
     void SimulateDV(uint16_t a, uint16_t l, uint16_t divisor);
@@ -196,6 +214,10 @@ public:
             *LsbSP |= S1_MASK;
         LsbSP[-1] = OverflowCorrected(MASK_16_BITS & (Decent >> 14)); // Was 13.
     }
+    void addInterrupt(int i);
+    uint16_t handleInterrupt(void);
+    void incTime(void);
+    void incTIME1(void);
 };
 
 #endif//__CPU_H__

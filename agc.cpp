@@ -1,76 +1,14 @@
 #include <stdio.h>
 #include <memory.h>
 #include "cpu.h"
+#include <map>
+
+using namespace std;
 
 #include <ncurses.h>
 
 FILE    *logFile=NULL;
 
-//#include <unistd.h>
-//#include <termios.h>
-
-/*
-char getch() {
-        char buf = 0;
-        struct termios old = {0};
-        if (tcgetattr(0, &old) < 0)
-                perror("tcsetattr()");
-        old.c_lflag &= ~ICANON;
-        old.c_lflag &= ~ECHO;
-        old.c_cc[VMIN] = 1;
-        old.c_cc[VTIME] = 0;
-        if (tcsetattr(0, TCSANOW, &old) < 0)
-                perror("tcsetattr ICANON");
-        if (read(0, &buf, 1) < 0)
-                perror ("read()");
-        old.c_lflag |= ICANON;
-        old.c_lflag |= ECHO;
-        if (tcsetattr(0, TCSADRAIN, &old) < 0)
-                perror ("tcsetattr ~ICANON");
-        return (buf);
-}
-*/
-
-/*
-006244,000034:    4000                                           COUNT*   $$/RUPTS                              #  FIX-FIX LEAD INS
-006245,000035:    4000           00004                           INHINT                                         #  GO
-006246,000036:    4001           34054                           CAF      GOBB                                  
-006247,000037:    4002           56006                           XCH      BBANK                                 
-006248,000038:    4003           12667                           TCF      GOPROG                                
-*/
-/*
-int main(int argc, char *argv[])
-{
-    CCpu    cpu;
-
-    printf("Use file: %s\n", argv[1]);
-
-    cpu.readCore(argv[1]);
-
-    printf("Address: %06o - %06o\n", 0, TOTAL_SIZE-1);
-
-    __uint16_t op = cpu.getOP();
-    printf("OP: %06o\n", op);
-    cpu.dispReg();
-    cpu.disasm();
-    int n = 50;
-    char key = 0;
-    while( key != 'q' ) {
-        key = getch();
-        switch( key ) {
-        case 's': 
-            cpu.sst();
-            break;
-        case 'q':
-            continue;
-        };
-        cpu.dispReg();
-        cpu.getOP();
-        cpu.disasm();
-    }
-    return 0;
-}
-*/
 
 //#define DO_TEST
 #ifdef DO_TEST
@@ -303,14 +241,59 @@ void test1st(void)
 }
 #endif
 
+map<uint16_t,char*> symTab;
+
 void updateScreen(WINDOW *wnd, CCpu *cpu, bool bRun)
 {
     cpu->dispReg(wnd);
     if( !bRun ) {
         for(int n=0; n<5; n++)
-            mvwprintw(wnd,16+n,0,"%s           ", cpu->disasm(n-1));
+            mvwprintw(wnd,18+n,0,"%s           ", cpu->disasm(n-1));
     }
+    map<uint16_t, char*>::iterator it;
+    it = symTab.find(cpu->getAbsPC());
+    if( it != symTab.end() )
+        mvwprintw(wnd,25,0,"%05o -> %s\n", it->first, it->second);
     refresh();			    /* Print it on to the real screen */
+}
+
+void readSymbols(char *sym)
+{
+    FILE *fs = fopen(sym,"r");
+    int idx = 0x409;
+    uint16_t addr;
+    char buf[16];
+    fseek(fs, idx, SEEK_SET);
+    while( fgets(buf, 16, fs) ) {
+        idx += 15;
+        fseek(fs, idx, SEEK_SET);
+        fread(&addr, 2, 1, fs);
+//        printf("%04X ", addr);
+        if( addr < 04000 ) {
+        } else {
+            symTab[addr] = strdup(buf);
+/*            if( addr >= 04000 && addr < 010000 )
+                printf("%s:    %05o\n", buf, addr);
+            else {
+                uint8_t blk = (addr - 010000) / FIXED_BLK_SIZE;
+                printf("%s: %02o %05o\n", buf, blk, (addr % FIXED_BLK_SIZE) + FIXED_BLK_SIZE);
+            }*/
+        }
+        idx += 292-15;
+        fseek(fs, idx, SEEK_SET);
+    }
+    map<uint16_t, char*>::iterator it;
+    for(it=symTab.begin(); it!=symTab.end(); ++it) {
+        printf("%05o -> %s\n", it->first, it->second);
+    }
+}
+static bool bRunning = false;
+WINDOW *myWindow = NULL;
+
+void stopAgc(void)
+{
+    bRunning = false;
+    nodelay(myWindow, false);
 }
 
 int main(int argc, char *argv[])
@@ -324,15 +307,29 @@ int main(int argc, char *argv[])
     int n = 0;
     char key;
     cpu.readCore(argv[1]);
-    bool bRunning = false;
     uint16_t brAddr = 0;
 
     fprintf(logFile,"Starting!\n");
 
-    WINDOW *myWindow = initscr();			/* Start curses mode 		  */
+    if( argc == 3 ) {
+        readSymbols(argv[argc-1]);
+//        return -1;
+//        sscanf(argv[argc-1], "%o", &n);
+//        brAddr = n;
+    }
+
+    myWindow = initscr();			/* Start curses mode 		  */
     noecho();
+
+    if( brAddr != 0 ) {
+        cpu.setBrkp(brAddr);
+        timeout(-1);
+        bRunning = true;
+        nodelay(myWindow, true);
+    }
+
     do {
-        if( brAddr == cpu.getPC() ) {
+        if( brAddr == cpu.getPC() && key !=  'R' ) {
             bRunning = false;
             nodelay(myWindow, false);
         }
@@ -363,6 +360,7 @@ int main(int argc, char *argv[])
             bRunning = true;
             nodelay(myWindow, true);
             //halfdelay(1);
+            key = 'R';
             break;
         case 'b':
             {

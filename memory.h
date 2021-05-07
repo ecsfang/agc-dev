@@ -8,10 +8,11 @@
 
 #define MASK_12B_ADDRESS    07777
 #define MASK_10B_ADDRESS    01777
-#define MASK_IO_ADDRESS     00777
 #define MASK_16_BITS        0177777
-#define MASK_15_BITS        077777
-#define MASK_12_BITS        07777
+#define MASK_15_BITS        0077777
+#define MASK_14_BITS        0037777
+#define MASK_12_BITS        0007777
+#define MASK_IO_ADDRESS     0000777
 
 #define OPCODE_MASK         070000  // Bit 13, 14 and 15
 #define QC_MASK             006000  // Bit 11 and 12
@@ -32,6 +33,7 @@
 #define IS_NEG(x) (((x)&S1_MASK) != 0)
 
 #define TOTAL_SIZE  (8 * ERASABLE_BLK_SIZE + 38 * FIXED_BLK_SIZE)
+#define IO_SIZE     8
 
 #define EB_MASK     003400 // 000 0EE E00 000 000
 #define EB_SHIFT         8
@@ -71,15 +73,60 @@
                             // Selectable from three possible sources:
                             // Trap 31A, Trap 31B, and Trap 32.
 
+extern FILE    *logFile;
+
 enum {
-    REG_A,
-    REG_L,
-    REG_Q,
-    REG_EB,
-    REG_FB,
-    REG_Z,
-    REG_BB
+    REG_A,          // 00
+    REG_L,          // 01
+    REG_Q,          // 02
+    REG_EB,         // 03 "erasable bank register"
+    REG_FB,         // 04 "fixed bank register"
+    REG_Z,          // 05
+    REG_BB,         // 06
+    REG__res,       // 07
+    REG_ARUPT,      // 10
+    REG_LRUPT,      // 11
+    REG_QRUPT,      // 12
+    REG_SAMPTIME2,  // 13
+    REG_SAMPTIME1,  // 14
+    REG_ZRUPT,      // 15
+    REG_BBRUPT,     // 16
+    REG_BRUPT,      // 17
+    REG_SYR,        // 20
+    REG_SR,         // 21
+    REG_CYL,        // 22
+    REG_EDOP,       // 23
+    REG_TIME2,      // 24
+    REG_TIME1,      // 25
+    REG_TIME3,      // 26
+    REG_TIME4,      // 27
+    REG_TIME5,      // 30
+    REG_TIME6,      // 31
+    REG_CDUX,       // 32
+    REG_CDUY,       // 33
+    REG_CDUZ,       // 34
+    REG_OPTY,       // 35
+    REG_OPTX,       // 36
+    REG_PIPAX,      // 37
+    REG_PIPAY,      // 40
+    REG_PIPAZ,      // 41
+    REG_Q_RHCCTR,   // 42
+    REG_P_RHCCTR,   // 43
+    REG_R_RHCCTR,   // 44
+    REG_INLINK,     // 45
+    REG_RNRAD,      // 46
+    REG_GYROCTR,    // 47
+    REG_CDUXCMD,    // 50
+    REG_CDUYCMD,    // 51
+    REG_CDUZCMD,    // 52
+    REG_OPTYCMD,    // 53
+    REG_OPTXCMD,    // 54
+    REG_THRUST,     // 55
+    REG_LEMONM,     // 56
+    REG_OUTLINK,    // 57
+    REG_ALTM,       // 60
 };
+
 
 typedef union {
     struct {
@@ -137,10 +184,12 @@ typedef union {
 
 class CMemory {
     Mem_t   mem;
+    __uint16_t  ioMem[IO_SIZE];
     __uint16_t  FEB;
 public:
     CMemory() {
         memset(&mem, 0, sizeof(Mem_t));
+        memset(ioMem,0,IO_SIZE*sizeof(__uint16_t));
         FEB = 0;
         //for(int i=0; i<TOTAL_SIZE; i++)
         //    mem.word[i] = i;
@@ -177,8 +226,30 @@ public:
     __uint16_t getQ(void) {
         return mem.Q;
     }
-    void step() {
-        mem.Z = mem.Z + 1;
+    __uint16_t getBB(void) {
+        return mem.BB;
+    }
+    __uint16_t getT1(void) {
+        return mem.TIME1;
+    }
+    __uint16_t getT2(void) {
+        return mem.TIME2;
+    }
+    __uint16_t getT3(void) {
+        return mem.TIME3;
+    }
+    __uint16_t getT4(void) {
+        return mem.TIME4;
+    }
+
+    __uint16_t incTimer(__uint16_t t) {
+        __uint16_t tv = read(t);
+        write(t, (tv+1) & MASK_14_BITS);
+        return (tv == MASK_14_BITS);
+    }
+
+    __uint16_t step() {
+        return ++mem.Z;
     }
     void setEB(__uint16_t eb) {
         mem.EB = eb;
@@ -204,7 +275,8 @@ public:
                 default:
                     if( addr >= 04000 && addr < 010000 )
                         addr += 010000;
-                    //printf("mem[%05o] = %05o\n", addr, data);
+                    if( addr == REG_Z )
+                        printf("UPDATING Z-REG!! mem[%05o] = %05o\n", addr, data);
                     switch(addr) {
                         case CYR_REG:
                             data = (((data & 0x7FFF) >> 1 ) | (data << 14) ) & 0x7FFF;
@@ -229,18 +301,47 @@ public:
         if( _addr != ERR_ADDR )
             write(_addr, data);
     }
-    void writeIO(__uint16_t io, __uint16_t data) {
-        printf("(write %05o -> IO:%o!) ", data, io);
+    __uint16_t readIO(__uint16_t addr)
+    {
+        switch( addr ) {
+            case REG_L:
+                return getL();
+            case REG_Q:
+                return getQ();
+            default:
+                if( addr < IO_SIZE )
+                    return ioMem[addr];
+                return 0;
+        }
     }
-    __uint16_t  readIO(__uint16_t io) {
-        printf("(read IO:%o!) ", io);
-        return 0;
+
+    void writeIO(__uint16_t addr, __uint16_t data)
+    {
+        switch( addr ) {
+            case REG_L:
+                setL(data);
+                break;
+            case REG_Q:
+                setQ(data);
+                break;
+            default:
+                if( addr < IO_SIZE )
+                    ioMem[addr] = data;
+        }
+    }
+
+    void  update(__uint16_t addr) {
+        write(addr, read(addr));
+    }
+    void  inc(__uint16_t addr) {
+        write(addr, read(addr)+1);
     }
 #define SIGN_EXTEND(w) ((w & MASK_15_BITS) | ((w << 1) & S2_MASK))
     __uint16_t  read(__uint16_t addr) {
         if( addr >= 04000 && addr < 010000 )
             addr += 010000;
-        return addr < TOTAL_SIZE ? SIGN_EXTEND(mem.word[addr]) : 0;
+//        return addr < TOTAL_SIZE ? SIGN_EXTEND(mem.word[addr]) : 0;
+        return addr < TOTAL_SIZE ? mem.word[addr] : 0;
     }
     __uint16_t  read12(__uint16_t addr) {
         __uint16_t _addr = addr2mem(addr);
