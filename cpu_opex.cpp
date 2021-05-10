@@ -167,7 +167,7 @@ int CCpu::op2ex(void)
         // QXCH
         q = mem.getQ();
         x = mem.read(k10);
-        mem.write(k10, OverflowCorrected(q));
+        mem.write12(k10, OverflowCorrected(q));
         mem.setQ(SignExtend(x));
 //        fprintf(logFile,"QXCH %05o <-> %05o\n", q, x);
 //        fflush(logFile);
@@ -182,7 +182,7 @@ int CCpu::op2ex(void)
         else
             x = AddSP16(x, SignExtend(NEG_ONE));
         bOF |= ValueOverflowed(x) != POS_ZERO;
-        mem.write(k10,bOF ? OverflowCorrected(x) : x);
+        mem.write12(k10,bOF ? OverflowCorrected(x) : x);
 //        fprintf(logFile,"%c (%05o) %05o\n", bOF ? '*':' ', x, OverflowCorrected(x));
         ret = 0;
         break;
@@ -196,7 +196,7 @@ int CCpu::op2ex(void)
             x = AddSP16(x, POS_ONE);
 //        fprintf(logFile,"%05o [%05o]\n", x, OverflowCorrected(x));
         bOF |= ValueOverflowed(x) != POS_ZERO;
-        mem.write(k10,k10 < REG_EB ? x : OverflowCorrected(x));
+        mem.write12(k10,k10 < REG_EB ? x : OverflowCorrected(x));
         break;
     }
     return ret;

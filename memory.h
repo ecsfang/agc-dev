@@ -12,7 +12,11 @@
 #define MASK_15_BITS        0077777
 #define MASK_14_BITS        0037777
 #define MASK_12_BITS        0007777
+#define MASK_10_BITS        0001777
+#define MASK_8_BITS         0000377
 #define MASK_IO_ADDRESS     0000777
+
+#define FB_MEM_START        010000
 
 #define OPCODE_MASK         070000  // Bit 13, 14 and 15
 #define QC_MASK             006000  // Bit 11 and 12
@@ -24,8 +28,25 @@
 #define POS_ONE      000001
 #define NEG_ONE      077776
 
-#define S1_MASK             (1<<14)
-#define S2_MASK             (1<<15)
+#define BIT_1               (1<<0)
+#define BIT_2               (1<<1)
+#define BIT_3               (1<<2)
+#define BIT_4               (1<<3)
+#define BIT_5               (1<<4)
+#define BIT_6               (1<<5)
+#define BIT_7               (1<<6)
+#define BIT_8               (1<<7)
+#define BIT_9               (1<<8)
+#define BIT_10              (1<<9)
+#define BIT_11              (1<<10)
+#define BIT_12              (1<<11)
+#define BIT_13              (1<<12)
+#define BIT_14              (1<<13)
+#define BIT_15              (1<<14)
+#define BIT_16              (1<<15)
+
+#define S1_MASK             BIT_15
+#define S2_MASK             BIT_16
 #define OVF_MASK            (1<<16)
 #define MANTISSA_MASK       (MASK_15_BITS>>1)
 
@@ -349,6 +370,7 @@ public:
             return read(_addr);
         return ERR_ADDR;
     }
+#if 0
     // Map 12 bit address to physical address
     __uint16_t  addr2mem(__uint16_t addr) {
         __uint16_t  _addr = 0;
@@ -382,6 +404,34 @@ public:
         //printf("Addr: %06o -> %06o\n", addr, _addr);
         return _addr;
     }
+#else
+    // Map 12 bit address to physical address
+    __uint16_t  addr2mem(__uint16_t addr) {
+        __uint16_t  _addr;
+        __uint8_t   sub = 0;
+        if( (addr & (BIT_11|BIT_12)) == 00 ) {
+            if( (addr & (BIT_9|BIT_10)) == (BIT_9|BIT_10) ) {
+                // Erasable-switched memory ...
+                return (addr & MASK_8_BITS) | (mem.EB & EB_MASK);
+            } else {
+                // Erasable memory ...
+                return addr & MASK_10_BITS;
+            }
+        }
+        if( (addr & BIT_12) == 0 ) {
+            // Fixed-switched memory
+            _addr = (addr & MASK_10_BITS) | (mem.FB & FB_MASK);
+            if( sub && (_addr & (BIT_14|BIT_15)) == (BIT_14|BIT_15) ) {
+                return (_addr | BIT_16) + FB_MEM_START;
+            } else {
+                return _addr + FB_MEM_START;
+            }
+        } else {
+            // Fixed-fixed memory (4000-7777)
+            return addr & MASK_12_BITS;
+        }
+    }
+#endif
     void init(void);
 };
 

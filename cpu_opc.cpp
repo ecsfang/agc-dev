@@ -160,24 +160,24 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
         if( k10 < 3 )
             mem.write(k10, SignExtend(Lsw));
         else
-            mem.write(k10, Lsw); //SignExtend(Lsw));
+            mem.write12(k10, Lsw); //SignExtend(Lsw));
         if( (k10-1) < 3 )
             mem.write(k10-1, Msw);
         else
-            mem.write(k10-1, OverflowCorrected(Msw));
+            mem.write12(k10-1, OverflowCorrected(Msw));
         bOF = false;
         mct = 3;
         break;
     case 01:    // LXCH
         l = mem.getL();
         x1 = mem.read(k10);
-        mem.write(k10,l);
+        mem.write12(k10,l);
         mem.setL(x1);
         ret = 0;
         break;
     case 02:    // INCR
         x1 = mem.read(k10);
-        mem.write(k10,x1+1);
+        mem.write12(k10,x1+1);
         ret = 0;
         break;
     case 03: // ADS
@@ -189,7 +189,7 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
         else
             a = add1st(mem.getA(), SignExtend(mem.read(k10)));
         setA(a);
-        mem.write(k10,a);
+        mem.write12(k10,a);
         ret = 0;
         break;
     default:
@@ -205,7 +205,7 @@ int CCpu::op3(void)
     // the contents of a memory location into the accumulator.
     uint16_t k = SignExtend(mem.read12(k12));
     setA(k);
-    if( IS_EDIT_REG(k10) )
+    if( IS_EDIT_REG(k12) )
         mem.write(k12, k); // Update (K)!
     if( k12 != REG_A && k12 != REG_Q )
         bOF = false;
@@ -298,13 +298,13 @@ int CCpu::op5(void)
             break;
         default:
             if( OF() ) {
-                mem.write(k10,ovf_corr(a));
+                mem.write12(k10,ovf_corr(a));
                 //mem.setZ(mem.getZ() + 1);   // Overflow - skip one line!
                 nextPC++;
 //                fprintf(logFile,"TS OF:%d S2:%d (%d)\n", bOF, s2, POS_OVF());
                 setA(POS_OVF() ? POS_ONE : NEG_ONE);
             } else {
-                mem.write(k10,a);
+                mem.write12(k10,a);
             }
         }
         bOF = false;
@@ -325,7 +325,7 @@ int CCpu::op5(void)
         } else {
             // INDEX
             idx = mem.read(k10);
-            mem.write(k10,idx);
+            mem.write12(k10,idx);
         }
         ret = 0;
         break;
@@ -346,7 +346,7 @@ int CCpu::op6(void)
 //    mem.write(0, add1st(SignExtend(a), SignExtend(m)));
     mem.write(0, add1st(a, SignExtend(m)));
     
-    if( IS_EDIT_REG(k10) )
+    if( IS_EDIT_REG(k12) )
         mem.write(k12, m); // Update (K)!
     ret = 0;
     return ret;

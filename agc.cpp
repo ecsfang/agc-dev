@@ -241,6 +241,40 @@ void test1st(void)
 }
 #endif
 
+void memTest(CMemory *mem, uint16_t a0, uint16_t a1, uint8_t eb, uint8_t fb, uint8_t ext)
+{
+    uint16_t    addr0, addr1;
+    mem->setEB(eb<<EB_SHIFT);
+    mem->setFB(fb<<FB_SHIFT);
+    addr0 = mem->addr2mem(a0);
+    addr1 = mem->addr2mem(a1);
+
+    printf("%05o-%05o\t%02o\t%02o\t%o\t%04o-%04o\n", addr0, addr1, eb, fb, ext, a0, a1);
+}
+void doMemTest(CMemory *mem)
+{
+    printf("Memory test!\n");
+    for(uint8_t e=0; e<8; e++) {
+        memTest(mem, 00000, 01377, e, 0, 0);
+    }
+    printf("\n");
+    for(uint8_t e=0; e<8; e++) {
+        memTest(mem, 01400, 01777, e, 0, 0);
+    }
+    printf("\n");
+    for(uint8_t e=0; e<8; e++) {
+        memTest(mem, 04000, 07777, e, 0, 0);
+    }
+    printf("\n");
+    for(uint8_t e=0; e<8; e++) {
+        memTest(mem, 02000, 03777, e, 0, 0);
+    }
+    printf("\n");
+    for(uint8_t f=0; f<040; f++) {
+        memTest(mem, 02000, 03777, 0, f, 0);
+    }
+}
+
 map<uint16_t,char*> symTab;
 
 void updateScreen(WINDOW *wnd, CCpu *cpu, bool bRun)
@@ -304,6 +338,14 @@ int main(int argc, char *argv[])
 #else
 
     CCpu    cpu;
+
+//#define MEMORY_TEST
+#ifdef MEMORY_TEST
+    doMemTest(cpu.getMem());
+    return 0;
+#endif
+
+
     int n = 0;
     char key;
     cpu.readCore(argv[1]);
@@ -317,6 +359,7 @@ int main(int argc, char *argv[])
 //        sscanf(argv[argc-1], "%o", &n);
 //        brAddr = n;
     }
+
 
     myWindow = initscr();			/* Start curses mode 		  */
     noecho();

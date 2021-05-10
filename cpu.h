@@ -116,6 +116,10 @@ public:
     }
     char *mAddr(uint16_t a);
 
+    CMemory *getMem(void) {
+        return &mem;
+    }
+
     int sst(void);
 
     int op0(void);
