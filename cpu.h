@@ -195,6 +195,78 @@ public:
         //fprintf(logFile,"AddSP16: %05o + %05o = %05o\n", Addend1, Addend2, Sum);
         return (Sum);
     }
+
+    //-----------------------------------------------------------------------------
+    // Here are functions to convert a DP into a more-decent 1's-
+    // complement format in which there's not an extra sign-bit to contend with.
+    // (In other words, a 29-bit format in which there's a single sign bit, rather
+    // than a 30-bit format in which there are two sign bits.)  And vice-versa.
+    // The DP value consists of two adjacent SP values, MSW first and LSW second,
+    // and we're given a pointer to the second word.  The main difficulty here
+    // is dealing with the case when the two SP words don't have the same sign,
+    // and making sure all of the signs are okay when one or more words are zero.
+    // A sign-extension is added a la the normal accumulator.
+
+    int SpToDecent (int16_t * LsbSP)
+    {
+        int16_t Msb, Lsb;
+        int Value, Complement;
+        Msb = LsbSP[-1];
+        Lsb = *LsbSP;
+        if (Msb == POS_ZERO || Msb == NEG_ZERO)	{ // Msb is zero.
+            // As far as the case of the sign of +0-0 or -0+0 is concerned,
+            // we follow the convention of the DV instruction, in which the
+            // overall sign is the sign of the less-significant word.
+            Value = SignExtend (Lsb);
+            if (Value & 0100000)
+                Value |= ~0177777;
+            return (07777777777 & Value);	// Eliminate extra sign-ext. bits.
+        }
+        // If signs of Msb and Lsb words don't match, then make them match.
+        if ((040000 & Lsb) != (040000 & Msb)) {
+            if (Lsb == POS_ZERO || Lsb == NEG_ZERO)	{ // Lsb is zero.
+                // Adjust sign of Lsb to match Msb.
+                if (0 == (040000 & Msb))
+                    Lsb = POS_ZERO;
+                else
+                    Lsb = NEG_ZERO;	// 2005-08-17 RSB.  Was "Msb".  Oops!
+            } else {	// Lsb is not zero.
+                // The logic will be easier if the Msb is positive.
+                Complement = (040000 & Msb);
+                if (Complement) {
+                    Msb = (077777 & ~Msb);
+                    Lsb = (077777 & ~Lsb);
+                }
+                // We now have Msb positive non-zero and Lsb negative non-zero.
+                // Subtracting 1 from Msb is equivalent to adding 2**14 (i.e.,
+                // 0100000, accounting for the parity) to Lsb.  An additional 1 
+                // must be added to account for the negative overflow.
+                Msb--;
+                Lsb = ((Lsb + 040000 + POS_ONE) & 077777);
+                // Restore the signs, if necessary.
+                if (Complement) {
+                    Msb = (077777 & ~Msb);
+                    Lsb = (077777 & ~Lsb);
+                }
+            }
+        }
+        // We now have an Msb and Lsb of the same sign; therefore,
+        // we can simply juxtapose them, discarding the sign bit from the 
+        // Lsb.  (And recall that the 0-position is still the parity.)
+        Value = (03777740000 & (Msb << 14)) | (037777 & Lsb);
+        // Also, sign-extend for further arithmetic.
+        if (02000000000 & Value)
+            Value |= 04000000000;
+        return (Value);
+    }
+
+    int16_t AbsSP (int16_t Value)
+    {
+        if (040000 & Value)
+            return (077777 & ~Value);
+        return (Value);
+    }
+
     void SimulateDV(uint16_t a, uint16_t l, uint16_t divisor);
 
     int agc2cpu(int Input)
@@ -203,6 +275,22 @@ public:
             return (-(MANTISSA_MASK & ~Input));
         else
             return (MANTISSA_MASK & Input);
+    }
+
+    int cpu2agc (int Input)
+    {
+        if (Input < 0)
+            return (077777 & ~(-Input));
+        else
+            return (077777 & Input);
+    }
+
+    int agc2cpu2 (int Input)
+    {
+        if (0 != (02000000000 & Input))
+            return (-(01777777777 & ~Input));
+        else
+            return (01777777777 & Input);
     }
 
     int cpu2agc2(int Input)
@@ -226,6 +314,16 @@ public:
     uint16_t handleInterrupt(void);
     void incTime(void);
     void incTIME1(void);
+    void divTest(uint16_t a, uint16_t l, uint16_t q) {
+        mem.setA(SignExtend(a));
+        mem.setL(SignExtend(l));
+        mem.setQ(SignExtend(q));
+        k10 = REG_Q;
+        qc = 0;
+        printf("A: %05o L: %05o D: %05o ", mem.getA(), mem.getL(), mem.getQ());
+        op1ex();
+        printf("==> A: %05o L: %05o\n", mem.getA(), mem.getL());
+    }
 };
 
 #endif//__CPU_H__

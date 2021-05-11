@@ -275,6 +275,37 @@ void doMemTest(CMemory *mem)
     }
 }
 
+typedef struct {
+    uint16_t a;
+    uint16_t l;
+    uint16_t d;
+    uint16_t ra;
+    uint16_t rl;
+} Div_t;
+
+Div_t dTest[] = {
+    { 017777, 040000, 020000, 037774, 000001 },
+    { 017777, 040000, 057777, 040003, 000001 },
+    { 060000, 037777, 020000, 040003, 077776 },
+    { 060000, 037777, 057777, 037774, 077776 },
+    { 017777, 037777, 020000, 037777, 017777 },
+    { 037776, 000000, 037776, 037777, 037776 },
+    { 000000, 077777, 000000, 040000, 077777 },
+    { 000000, 077777, 077777, 037777, 077777 },
+    { 077777, 000000, 000000, 037777, 000000 },
+    { 077777, 000000, 077777, 040000, 000000 },
+    { 077777, 020000, 037776, 040000, 000000 }
+};
+
+
+void doDivTest(CCpu *cpu)
+{
+    printf("Division test!\n");
+    Div_t *dt = dTest;
+    for( int n=0; n < sizeof(dTest)/sizeof(Div_t); n++, dt++)
+        cpu->divTest(dt->a,dt->l,dt->d);
+}
+
 map<uint16_t,char*> symTab;
 
 void updateScreen(WINDOW *wnd, CCpu *cpu, bool bRun)
@@ -342,6 +373,11 @@ int main(int argc, char *argv[])
 //#define MEMORY_TEST
 #ifdef MEMORY_TEST
     doMemTest(cpu.getMem());
+    return 0;
+#endif
+//#define DIV_TEST
+#ifdef DIV_TEST
+    doDivTest(&cpu);
     return 0;
 #endif
 

@@ -90,21 +90,156 @@ int CCpu::op1ex(void)
     int ret = -1;
     // The "Transfer Control to Fixed" instruction jumps to a
     // memory location in fixed (as opposed to erasable) memory.
-//    __uint16_t k = opc & MASK_12B_ADDRESS;
-    switch( qc ) {
+    //    __uint16_t k = opc & MASK_12B_ADDRESS;
+    switch (qc) {
     case 00:
         // Double divide
-//        pDis += sprintf(disBuf+pDis, "DV %04o", k12);
-        SimulateDV(mem.getA(), mem.getL(), SignExtend(mem.read12(k12)));
+        //        pDis += sprintf(disBuf+pDis, "DV %04o", k12);
+        //        SimulateDV(mem.getA(), mem.getL(), SignExtend(mem.read12(k12)));
+
+        {
+            int16_t AccPair[2], AbsA, AbsL, AbsK, Div16;
+            int16_t Operand16;
+            int Dividend, Divisor, Quotient, Remainder;
+
+            AccPair[0] = OverflowCorrected(mem.getA());
+            AccPair[1] = mem.getL();
+            Dividend = SpToDecent(&AccPair[1]);
+            DecentToSp(Dividend, &AccPair[1]);
+            // Check boundary conditions.
+            AbsA = AbsSP(AccPair[0]);
+            AbsL = AbsSP(AccPair[1]);
+
+            switch (k10) {
+            case REG_A:
+                // DV modifies A before reading the divisor, so in this
+                // case the divisor is -|A|.
+                Div16 = mem.getA();
+                if ((Div16 & 0100000) == 0)
+                    Div16 = 0177777 & ~Div16;
+                break;
+            case REG_L:
+                // DV modifies L before reading the divisor. L is first
+                // negated if the quotient A,L is negative according to
+                // DV sign rules. Then, 40000 is added to it.
+                Div16 = mem.getL();
+                if (((AbsA == 0) && (0100000 & mem.getL())) || ((AbsA != 0) && (0100000 & mem.getA())))
+                    Div16 = 0177777 & ~Div16;
+                // Make sure to account for L's built-in overflow correction
+                Div16 = SignExtend(OverflowCorrected(AddSP16((uint16_t)Div16, 040000)));
+                break;
+            case REG_Z:
+                // DV modifies Z before reading the divisor. If the
+                // quotient A,L is negative according to DV sign rules,
+                // Z16 is set.
+                Div16 = mem.getZ();
+                if (((AbsA == 0) && (0100000 & mem.getZ())) || ((AbsA != 0) && (0100000 & mem.getA())))
+                    Div16 |= 0100000;
+                break;
+            case REG_Q:
+                Div16 = mem.getQ();
+                break;
+            default:
+                Div16 = SignExtend(mem.read12(k10));
+            }
+
+            // Fetch the values;
+            AbsK = AbsSP(OverflowCorrected(Div16));
+
+            fprintf(logFile,"DIV: |a| = %05o |l| = %05o (%04o) = %05o\n",AbsA, AbsL, k10, AbsK);
+
+            if (AbsA > AbsK || (AbsA == AbsK && AbsL != POS_ZERO) || ValueOverflowed(Div16) != POS_ZERO)
+            {
+                // The divisor is smaller than the dividend, or the divisor has
+                // overflow. In both cases, we fall back on a slower simulation
+                // of the hardware registers, which will produce "total nonsense"
+                // (that nonetheless will match what the actual AGC would have gotten).
+            fprintf(logFile,"Do SimulateDV()\n");
+                SimulateDV(mem.getA(), mem.getL(), Div16);
+                //  SimulateDV(State, Div16);
+            }
+            else if (AbsA == 0 && AbsL == 0)
+            {
+            fprintf(logFile,"Just zeros!\n");
+                // The dividend is 0 but the divisor is not. The standard DV sign
+                // convention applies to A, and L remains unchanged.
+                if ((040000 & mem.getL()) == (040000 & OverflowCorrected(Div16)))
+                {
+                    if (AbsK == 0)
+                        Operand16 = 037777; // Max positive value.
+                    else
+                        Operand16 = POS_ZERO;
+                }
+                else
+                {
+                    if (AbsK == 0)
+                        Operand16 = (077777 & ~037777); // Max negative value.
+                    else
+                        Operand16 = NEG_ZERO;
+                }
+
+                mem.setA(SignExtend(Operand16));
+            }
+            else if (AbsA == AbsK && AbsL == POS_ZERO)
+            {
+            fprintf(logFile,"A==K, L == 0\n");
+                // The divisor is equal to the dividend.
+                if (AccPair[0] == OverflowCorrected(Div16)) // Signs agree?
+                {
+                    Operand16 = 037777; // Max positive value.
+                }
+                else
+                {
+                    Operand16 = (077777 & ~037777); // Max negative value.
+                }
+                mem.setL(SignExtend(AccPair[0]));
+                mem.setA(SignExtend(Operand16));
+            }
+            else
+            {
+                // The divisor is larger than the dividend.  Okay to actually divide!
+                // Fortunately, the sign conventions agree with those of the normal
+                // C operators / and %, so all we need to do is to convert the
+                // 1's-complement values to native CPU format to do the division,
+                // and then convert back afterward.  Incidentally, we know we
+                // aren't dividing by zero, since we know that the divisor is
+                // greater (in magnitude) than the dividend.
+            fprintf(logFile,"Divisor larger than dividend!\n");
+                Dividend = agc2cpu2(Dividend);
+                Divisor = agc2cpu(OverflowCorrected(Div16));
+                Quotient = Dividend / Divisor;
+                Remainder = Dividend % Divisor;
+                mem.setA(SignExtend(cpu2agc(Quotient)));
+            fprintf(logFile,"QUO %05o REM %05o DIV %05o\n", Quotient, Remainder, Dividend);
+                if (Remainder == 0)
+                {
+                    // In this case, we need to make an extra effort, because we
+                    // might need -0 rather than +0.
+                    if (Dividend >= 0)
+                        mem.setL(POS_ZERO);
+                    else
+                        mem.setL(NEG_ZERO);
+                }
+                else
+                    mem.setL(SignExtend(cpu2agc(Remainder)));
+            }
+        }
+        {
+        uint16_t a = mem.getA();
+        uint16_t l = mem.getL();
+        mem.setA(l);
+        mem.setL(a);
+        }
         bOF = false;
         ret = 0;
         mct = 6;
         break;
     default:
         // BZF K
-        if( mem.getA() == 0 || (mem.getA()&NEG_ZERO) == NEG_ZERO ) {
+        if (mem.getA() == 0 || (mem.getA() & NEG_ZERO) == NEG_ZERO)
+        {
             nextPC = k12; //nextPC = k12; //mem.setZ(k12);
-            mct = 1;  
+            mct = 1;
         }
         ret = 0;
     }

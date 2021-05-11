@@ -63,32 +63,30 @@ int CCpu::op1(void)
         // to its absolute value less 1. If (K) = -0, we take the instruction at I + 4, and
         // (A) will be set to + 0. CCS always leaves a positive quantity in A. 
         m = mem.read12(k10);
-        fprintf(logFile,"A: %05o - ", m);
+//        fprintf(logFile,"A: %05o - ", m);
         if( m > POS_ZERO && IS_POS(m) ) {
-            fprintf(logFile,"> +0");
+//            fprintf(logFile,"> +0");
             jmp = 0;
         } else if( m == POS_ZERO ) {
-            fprintf(logFile,"= +0");
+//            fprintf(logFile,"= +0");
             jmp = 1;
         } else if( (m&MASK_15_BITS) == NEG_ZERO ) {
-            fprintf(logFile,"= -0");
+//            fprintf(logFile,"= -0");
             jmp = 3;
         } else {
             // Is negative ...
-            fprintf(logFile,"< -0");
+//            fprintf(logFile,"< -0");
             jmp = 2;
         }
         setA( DABS(m) );
         nextPC += jmp;
-        fprintf(logFile," PC: %04o\n", nextPC);
-        //mem.setZ(mem.getZ() + jmp);
+//        fprintf(logFile," PC: %04o\n", nextPC);
         if( IS_EDIT_REG(k10) )
-            mem.write12(k10, m); // Update (k)!
+            mem.update(k10); // Update (k)!
         break;
     default: // TCF
         // The "Transfer Control to Fixed" instruction jumps to a
         // memory location in fixed (as opposed to erasable) memory.
-        //mem.setZ(k12);
         nextPC = k12;
         mct = 1;
         ret = 0;
@@ -177,8 +175,9 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
         ret = 0;
         break;
     case 02:    // INCR
-        x1 = mem.read12(k10);
-        mem.write12(k10,x1+1);
+        mem.inc(k10);
+        //x1 = mem.read12(k10);
+        //mem.write12(k10,x1+1);
         ret = 0;
         break;
     case 03: // ADS
@@ -209,7 +208,7 @@ int CCpu::op3(void)
     uint16_t k = SignExtend(mem.read12(k12));
     setA(k);
     if( IS_EDIT_REG(k12) )
-        mem.write12(k12, k); // Update (K)!
+        mem.update(k12); // Update (K)!
     if( k12 != REG_A && k12 != REG_Q )
         bOF = false;
     return 0;
@@ -221,10 +220,10 @@ int CCpu::op4(void)
     // the contents of a memory location into the accumulator.
     uint16_t k = k12 < REG_EB ? mem.read12(k12) : SignExtend(mem.read12(k12));
     setA(~k);
-//    setA(SignExtend((~k) & NEG_ZERO));
     if( IS_EDIT_REG(k12) )
         mem.update(k12); // Update (k)!
-    if( k12 > REG_Q )
+    // if( k12 > REG_Q )
+    if( k12 != REG_A && k12 != REG_Q )
         bOF = false;
     return 0;
 }
@@ -254,7 +253,7 @@ int CCpu::op5(void)
             break;
         default:
             // Upper word
-            if( (k+1) < 3 ) {
+            if( (k+1) < REG_EB ) {
                 x = mem.read12(k+1);
                 mem.write12(k+1,mem.getL());
                 mem.setL(x);
@@ -266,7 +265,7 @@ int CCpu::op5(void)
 //            fprintf(logFile," DXCH %04o -> L:%05o [%05o]\n", k10, mem.getL(), mem.read12(k10));
 
             // Lower word
-            if( (k) < 3 ) {
+            if( (k) < REG_EB ) {
                 x = mem.read12(k);
                 mem.write12(k,mem.getA());
                 mem.setA(x);
@@ -275,7 +274,7 @@ int CCpu::op5(void)
                 mem.write12(k,OverflowCorrected(mem.getA()));
                 mem.setA(x);
             }
-            if( k == 4 || k == 5 )
+            if( k == REG_Z || (k+1) == REG_Z )
                 nextPC = mem.getZ();
         }
         bOF = false;
@@ -284,40 +283,40 @@ int CCpu::op5(void)
         break;
     case 02:
         // TS
-        a = mem.read12(0);
+        a = mem.getA();
         switch( k10 ) {
-        case 00000:
+        case REG_A:
             if( OF() ) {
-                //mem.setZ(mem.getZ() + 1);   // Overflow - skip one line!
+                // Overflow - skip one line!
                 nextPC++;
             }
             break;
-        case 00005: // Special case ... TCAA
+        case REG_Z: // Special case ... TCAA
             if( OF() ) {
-                setA(POS_OVF() ? POS_ONE : NEG_ONE);
+                setA(SignExtend(POS_OVF() ? POS_ONE : NEG_ONE));
             }
             nextPC = ovf_corr(a);
-            //mem.setZ(ovf_corr(a));
             break;
         default:
             if( OF() ) {
-                mem.write12(k10,ovf_corr(a));
-                //mem.setZ(mem.getZ() + 1);   // Overflow - skip one line!
-                nextPC++;
 //                fprintf(logFile,"TS OF:%d S2:%d (%d)\n", bOF, s2, POS_OVF());
-                setA(POS_OVF() ? POS_ONE : NEG_ONE);
-            } else {
-                mem.write12(k10,a);
+                setA(SignExtend(POS_OVF() ? POS_ONE : NEG_ONE));
+                nextPC++;
             }
+            mem.write12(k10,k10 < REG_EB ? a : ovf_corr(a));
         }
         bOF = false;
         ret = 0;
         break;
     case 03:    // XCH
-        a = mem.read12(0);
+        if( k10 == REG_A )
+            break;
+        a = mem.getA();
         x = mem.read12(k10);
-        mem.write12(0,x);
-        mem.write12(k10,a);
+        mem.setA(x);
+        mem.write12(k10,k10 < REG_EB ? a : ovf_corr(a));
+        if( k10 == REG_Z )
+            nextPC = a;
         ret = 0;
         break;
     case 00:
@@ -350,7 +349,7 @@ int CCpu::op6(void)
     mem.write12(0, add1st(a, SignExtend(m)));
     
     if( IS_EDIT_REG(k12) )
-        mem.write12(k12, m); // Update (K)!
+        mem.update(k12); // Update (K)!
     ret = 0;
     return ret;
 }
@@ -359,10 +358,14 @@ int CCpu::op7(void)
 {
     int ret = -1;
     __uint16_t m = mem.read12(k12);
-    
-    setA( OverflowCorrected(mem.getA()) );
-    setA( SignExtend(mem.getA() & m) );
 
+    // MASK
+    if( k12 < REG_EB ) {
+        setA( mem.getA() & m );
+    } else {
+        __uint16_t a = OverflowCorrected(mem.getA());
+        setA( SignExtend(a & m) );
+	}
     ret = 0;
     return ret;
 }

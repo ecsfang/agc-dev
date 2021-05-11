@@ -32,7 +32,7 @@ void CCpu::readCore(char *core)
 //            printf("\n");
         }
     }
-//#define SELF_TEST
+#define SELF_TEST
 #ifdef SELF_TEST
     mem.setFB(020 * FIXED_BLK_SIZE);
     mem.setZ(02070);
@@ -282,6 +282,8 @@ void CCpu::SimulateDV(uint16_t a, uint16_t l, uint16_t divisor)
     uint16_t sum = 0;
     int i;
 
+    fprintf(logFile,"DV: a|%05o l|%05o / %05o\n", a, l, divisor);
+
     // Assume A contains the sign of the dividend
     dividend_sign = a & 0100000;
 
@@ -340,6 +342,8 @@ void CCpu::SimulateDV(uint16_t a, uint16_t l, uint16_t divisor)
     mem.setA((dividend_sign != divisor_sign) ? ~a : a);
     // The final value for L is negated if the dividend was negative
     mem.setL((dividend_sign) ? remainder : ~remainder);
+    fprintf(logFile,"DV ==> %05o %05o\n", mem.getA(), mem.getL());
+
 /*
     double f = btof(a, l);
     double div = btof(divisor, 0);
