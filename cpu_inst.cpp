@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "cpu.h"
 
+extern void stopAgc(void);
 
 #if 1
 void CCpu::readCore(char *core)
@@ -12,17 +13,21 @@ void CCpu::readCore(char *core)
     while(fgets(buf,1024,fp)) {
         if( strncmp("BANK=", buf, 5) == 0 ) {
             sscanf(buf, "BANK=%o", &bank);
-            addr = 010000 + bank * FIXED_BLK_SIZE;
+//            addr = 010000 + bank * FIXED_BLK_SIZE;
+            addr = 02000;
             fprintf(logFile, "BANK=%o [%06o]\n", bank, addr);
+            mem.setFB(bank << FB_SHIFT);
         }
         if( buf[0] >= '0' && buf[0] < '8') {
             char *p = buf;
             unsigned int word;
             p = strtok(buf, ", ");
             while( p && sscanf(p, "%o", &word) == 1 ) {
-                fprintf(logFile, "%02o,%04o [%06o] : %05o\n", bank, addr-(010000 + bank * FIXED_BLK_SIZE), addr, word);
+//                fprintf(logFile, "%02o,%04o [%06o] : %05o\n", bank, addr-(010000 + bank * FIXED_BLK_SIZE), addr, word);
+                fprintf(logFile, "%02o,%04o [%06o] : %05o\n", bank, addr, mem.addr2mem(addr), word);
                 p = strtok(NULL, ", "); //+= 6;
-                mem.write(addr++, word);
+                mem.writePys(mem.addr2mem(addr), word);
+                addr++;
             }
 //            printf("\n");
         }
@@ -103,7 +108,7 @@ int CCpu::sst(void)
     char logBuf[1024];
     int ln;
     ln = sprintf(logBuf, "%s", disasm());
-
+    uint16_t    omem = mem.readPys(mwBreak);
     __uint16_t op = getOP();
     bClrExtra = true;
 
@@ -171,6 +176,9 @@ int CCpu::sst(void)
     }
     if( nextPC )
         mem.setZ(nextPC);
+
+    if( mwBreak && omem != mem.readPys(mwBreak) )
+        stopAgc();
         
     return ret;
 }
@@ -190,14 +198,12 @@ int CCpu::sst(void)
 
 #define BOOT        04000   // Power-up or GOJ signal.
 
-extern void stopAgc(void);
-
 uint16_t CCpu::handleInterrupt(void)
 {
     uint16_t pc = getPC();
     fprintf(logFile,"HandleInterrupt [%03X]  @ %05o [%05o]\n", gInterrupt, pc, mem.getOP());
-    mem.write(REG_ZRUPT, pc);
-    mem.write(REG_BRUPT, mem.getOP());
+    mem.write12(REG_ZRUPT, pc);
+    mem.write12(REG_BRUPT, mem.getOP());
     for(int i=0; i<NR_INTS;i++) {
         if( gInterrupt & (1<<i) ) {
             uint16_t iPc = BOOT + i*4;

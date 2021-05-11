@@ -373,14 +373,12 @@ int main(int argc, char *argv[])
 
     do {
         if( brAddr == cpu.getPC() && key !=  'R' ) {
-            bRunning = false;
-            nodelay(myWindow, false);
+            stopAgc();
         }
         updateScreen(myWindow, &cpu, bRunning);
 	    key = getch();			/* Wait for user input */
         if( bRunning && key == 'b' ) {
-            bRunning = false;
-            nodelay(myWindow, false);
+            stopAgc();
             cpu.sst();
         }
         if( bRunning  ) {
@@ -428,6 +426,18 @@ int main(int argc, char *argv[])
                 getstr(buf);
                 sscanf(buf, "%o", &br);
                 cpu.memWatch(br);
+            }
+            break;
+        case 'w':
+            {
+                char mesg[]="Memory address:";
+                char buf[80];
+                int row, col;
+                int br = 0;
+                mvwprintw(myWindow,15,0,"%s", mesg);
+                getstr(buf);
+                sscanf(buf, "%o", &br);
+                cpu.memBreak(br);
             }
             break;
         case 'p':

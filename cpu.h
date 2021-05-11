@@ -28,6 +28,7 @@ class CCpu {
     int         pDis;
     bool        bps[TOTAL_SIZE];
     uint16_t    mwAddr;
+    uint16_t    mwBreak;
     uint32_t    clockCnt;
     uint16_t    dTime;
     uint8_t     mct;
@@ -36,10 +37,10 @@ class CCpu {
 
 public:
     CCpu() {
-        mem.read(04000);
-        mem.write(04000, 012345);
-        mem.read(04000);
-        mem.setZ(04000);
+//        mem.read12(04000);
+//        mem.write12(04000, 012345);
+//        mem.read12(04000);
+        mem.setZ(BOOT);
         idx = 0;
         bOF = false;
         memset(bps,0,TOTAL_SIZE*sizeof(bool));
@@ -56,6 +57,9 @@ public:
     // Set breakpoint in memory
     void memWatch(uint16_t mw) {
         mwAddr = mw;
+    }
+    void memBreak(uint16_t mw) {
+        mwBreak = mw;
     }
     uint16_t ovf_corr(uint16_t ov) {
         return OF() ? (ov & 0x3FFF) | s2 : ov;

@@ -56,6 +56,9 @@
 #define TOTAL_SIZE  (8 * ERASABLE_BLK_SIZE + 38 * FIXED_BLK_SIZE)
 #define IO_SIZE     8
 
+#define OUT_IO_SIZE 00020
+#define IN_IO_SIZE  01000
+
 #define EB_MASK     003400 // 000 0EE E00 000 000
 #define EB_SHIFT         8
 
@@ -205,17 +208,23 @@ typedef union {
 
 class CMemory {
     Mem_t   mem;
-    __uint16_t  ioMem[IO_SIZE];
+    __uint16_t  inIoMem[IN_IO_SIZE];
+    __uint16_t  outIoMem[OUT_IO_SIZE];
     __uint16_t  FEB;
 public:
     CMemory() {
+        // Clear all memory
         memset(&mem, 0, sizeof(Mem_t));
-        memset(ioMem,0,IO_SIZE*sizeof(__uint16_t));
+        // Clear i/o channels.
+        memset(inIoMem,0,IN_IO_SIZE*sizeof(__uint16_t));
+        memset(outIoMem,0,OUT_IO_SIZE*sizeof(__uint16_t));
+        // Init some i/o channels
+        inIoMem[030] = 037777;
+        inIoMem[031] = 077777;
+        inIoMem[032] = 077777;
+        inIoMem[033] = 077777;
+
         FEB = 0;
-        //for(int i=0; i<TOTAL_SIZE; i++)
-        //    mem.word[i] = i;
-        setEB(0);
-        setFB(0);    
     }
     __uint16_t getOP(int offs = 0) {
         return read12((mem.Z+offs) & MASK_12B_ADDRESS);
@@ -264,8 +273,8 @@ public:
     }
 
     __uint16_t incTimer(__uint16_t t) {
-        __uint16_t tv = read(t);
-        write(t, (tv+1) & MASK_14_BITS);
+        __uint16_t tv = read12(t);
+        write12(t, (tv+1) & MASK_14_BITS);
         return (tv == MASK_14_BITS);
     }
 
@@ -285,11 +294,17 @@ public:
         mem.EB = (mem.BB & 07) << EB_SHIFT;
         mem.FB = mem.BB & FB_MASK;
     }
-    void writeBank(__uint8_t bank, __uint16_t addr, __uint16_t data);
+    // Write data to a logical address
+    void write12(__uint16_t addr, __uint16_t data) {
+        __uint16_t _addr = addr2mem(addr);
+        if( _addr != ERR_ADDR )
+            writePys(_addr, data);
+    }
     // Write data to a physical address
-    void write(__uint16_t addr, __uint16_t data) {
+    void writePys(__uint16_t addr, __uint16_t data) {
         if( addr < TOTAL_SIZE ) {
             switch( addr ) {
+                case 00000: setA(data); break;
                 case 00003: setEB(data); break;
                 case 00004: setFB(data); break;
                 case 00006: setBB(data); break;
@@ -316,58 +331,75 @@ public:
             }
         }
     }
-    // Write data to a physical address
-    void write12(__uint16_t addr, __uint16_t data) {
-        __uint16_t _addr = addr2mem(addr);
-        if( _addr != ERR_ADDR )
-            write(_addr, data);
-    }
     __uint16_t readIO(__uint16_t addr)
     {
+        if (addr < 0 || addr > 0777)
+            return 0;
         switch( addr ) {
             case REG_L:
                 return getL();
             case REG_Q:
                 return getQ();
+//            case 012: return BIT_4;
             default:
-                if( addr < IO_SIZE )
-                    return ioMem[addr];
-                return 0;
+                return inIoMem[addr];
         }
     }
 
     void writeIO(__uint16_t addr, __uint16_t data)
     {
+        // The value should be in AGC format. 
+        data &= 077777;
+        if (addr < 0 || addr > 0777)
+            return;
         switch( addr ) {
-            case REG_L:
-                setL(data);
+        case REG_L:
+            setL(data);
+            break;
+        case REG_Q:
+            setQ(data);
+            break;
+        default:
+            switch(addr) {
+            case 010:
+                // Channel 10 is converted externally to the CPU into up to 16 ports,
+                // by means of latching relays.  We need to capture this data.
+                outIoMem[(data>>11) & 017] = data;
                 break;
-            case REG_Q:
-                setQ(data);
+            case 015:
+            case 016:
+                if( data == 022 ) {
+                    // RSET being pressed on either DSKY clears the RESTART light
+                    // flip-flop directly, without software intervention
+                    // RestartLight = 0;
+                }
                 break;
-            default:
-                if( addr < IO_SIZE )
-                    ioMem[addr] = data;
+            case 033:
+                // Channel 33 bits 11-15 are controlled internally, so don't let
+                // anybody write to them
+                data = (inIoMem[addr] & 076000) | (data & 001777);
+                break;
+            }
+            inIoMem[addr] = data;
         }
     }
 
     void  update(__uint16_t addr) {
-        write(addr, read(addr));
+        write12(addr, read12(addr));
     }
     void  inc(__uint16_t addr) {
-        write(addr, read(addr)+1);
+        write12(addr, read12(addr)+1);
     }
 #define SIGN_EXTEND(w) ((w & MASK_15_BITS) | ((w << 1) & S2_MASK))
-    __uint16_t  read(__uint16_t addr) {
+    __uint16_t  readPys(__uint16_t addr) {
         if( addr >= 04000 && addr < 010000 )
             addr += 010000;
-//        return addr < TOTAL_SIZE ? SIGN_EXTEND(mem.word[addr]) : 0;
         return addr < TOTAL_SIZE ? mem.word[addr] : 0;
     }
     __uint16_t  read12(__uint16_t addr) {
         __uint16_t _addr = addr2mem(addr);
         if( _addr != ERR_ADDR )
-            return read(_addr);
+            return readPys(_addr);
         return ERR_ADDR;
     }
 #if 0

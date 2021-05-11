@@ -20,7 +20,7 @@ int CCpu::op0ex(void)
     case 001000:    // WRITE
         fprintf(logFile," I/O WRITE %03o <-- %05o\n", kc, a);
         if( IS_L_OR_Q(kc) )
-            mem.write(kc, a);
+            mem.write12(kc, a);
         else
             mem.writeIO(kc, OverflowCorrected(a));
         ret = 0;
@@ -121,7 +121,7 @@ int CCpu::op2ex(void)
     case 00:
         // MSU - Modular subtraction
         /*        a = mem.getA();
-        x = mem.read(k10);
+        x = mem.read12(k10);
         mem.write(k10,x);   // Re-write k
         a = a-x;
         mem.setA(a);
@@ -135,12 +135,12 @@ int CCpu::op2ex(void)
             if (k10 < REG_EB)
             {
                 ui = 0177777 & mem.getA();
-                uj = 0177777 & ~mem.read(k10);
+                uj = 0177777 & ~mem.read12(k10);
             }
             else
             {
                 ui = (077777 & OverflowCorrected(mem.getA()));
-                uj = (077777 & ~mem.read(k10));
+                uj = (077777 & ~mem.read12(k10));
             }
             diff = ui + uj + 1; // Two's complement subtraction -- add the complement plus one
             // The AGC sign-extends the result from A15 to A16, then checks A16 to see if
@@ -166,7 +166,7 @@ int CCpu::op2ex(void)
     case 01:
         // QXCH
         q = mem.getQ();
-        x = mem.read(k10);
+        x = mem.read12(k10);
         mem.write12(k10, OverflowCorrected(q));
         mem.setQ(SignExtend(x));
 //        fprintf(logFile,"QXCH %05o <-> %05o\n", q, x);
@@ -175,7 +175,7 @@ int CCpu::op2ex(void)
         break;
     case 02:
         // AUG
-        x = SignExtend(mem.read(k10));
+        x = SignExtend(mem.read12(k10));
 //        fprintf(logFile," AUG: %05o --> ", x);
         if( IS_POS(x) )
             x = AddSP16(x, POS_ONE);
@@ -188,7 +188,7 @@ int CCpu::op2ex(void)
         break;
     case 03:
         // DIM
-        x = SignExtend(mem.read(k10));
+        x = SignExtend(mem.read12(k10));
 //        fprintf(logFile,"DIM: %05o --> ", x);
         if( IS_POS(x) && x != POS_ZERO )
             x = AddSP16(x, SignExtend(NEG_ONE));
@@ -279,9 +279,9 @@ int CCpu::op5ex(void)
 {
     // INDEX (NDX)
     int ret = -1;
-    idx = mem.read(k12);
+    idx = mem.read12(k12);
     if( IS_EDIT_REG(k12) )
-        mem.write(k12,idx);
+        mem.write12(k12,idx);
     ret = 0;
     bClrExtra = false;
     return ret;
@@ -296,7 +296,7 @@ int CCpu::op6ex(void)
     switch( qc ) {
     case 00: // SU
 /*        a = mem.getA();
-        x = mem.read(k10);
+        x = mem.read12(k10);
         mem.setA(a - x);
         if (IS_EDIT_REG(k10))
             mem.update(k10); // Update (k)!
@@ -304,9 +304,9 @@ int CCpu::op6ex(void)
         if (k10 == REG_A)
             mem.setA(SignExtend(NEG_ZERO));
         else //if (k10 < REG_EB)
-            mem.setA(AddSP16(mem.getA(), 0177777 & ~mem.read(k10)));
+            mem.setA(AddSP16(mem.getA(), 0177777 & ~mem.read12(k10)));
 //        else
-//            mem.setA(AddSP16(mem.getA(), 077777 & ~mem.read(k10)));
+//            mem.setA(AddSP16(mem.getA(), 077777 & ~mem.read12(k10)));
         if (IS_EDIT_REG(k10))
             mem.update(k10); // Update (k)!
         break;

@@ -68,33 +68,37 @@ void CCpu::dispReg(WINDOW *win)
     wclear(win);
     uint16_t r;
     for( ; regs[y].name; y++ ) {
-        r = mem.read(regs[y].addr);
+        r = mem.read12(regs[y].addr);
         if( regs[y].addr < REG_EB ) {
             mvwprintw(win, y, 0, "%2s: %d:%05o ", regs[y].name, r & 0100000 ? 1 : 0, r & regs[y].mask);
         } else
             mvwprintw(win, y, 0, "%2s:   %05o ", regs[y].name, r & regs[y].mask);
+        if( regs[y].addr == REG_EB ) mvwprintw(win, y, 12, "[%02o]", (r & EB_MASK)>>EB_SHIFT);
+        if( regs[y].addr == REG_FB ) mvwprintw(win, y, 12, "[%02o]", (r & FB_MASK)>>FB_SHIFT);
     }
     y++;
     mvwprintw(win, y++, 0, "   %6.1f us", clockCnt * 11.7);
     mvwprintw(win, y++, 0, "%6d %3d MCT", clockCnt, dTime);
 
     y1 = 0;
-    mvwprintw(win, y1++, 15, "    OF: [%c]", OF() ? 'X' : ' ' );
-    mvwprintw(win, y1++, 15, " IRUPT: [%c]", bInterrupt ? (bIntRunning ? '-' : 'X') : ' ' );
-    mvwprintw(win, y1++, 15, " INDEX: %04o", idx );
-    mvwprintw(win, y1++, 15, "   OPC: %o", (opc & 070000) >> 12 );
-    mvwprintw(win, y1++, 15, "    QC: %o", qc );
-    mvwprintw(win, y1++, 15, "EXTEND: [%c]", bExtracode ? 'X' : ' ' );
-    mvwprintw(win, y1++, 15, "   CYR: [%05o]", mem.read(CYR_REG));
-    mvwprintw(win, y1++, 15, "    SR: [%05o]", mem.read(SR_REG));
-    mvwprintw(win, y1++, 15, "   CYL: [%05o]", mem.read(CYL_REG));
-    mvwprintw(win, y1++, 15, "  EDOP: [%05o]", mem.read(EDOP_REG));
-//    mvwprintw(win, 2, 15, "  EMEM: %05o [%04o]", mem.read(k10), k10 );
-//    mvwprintw(win, 2, 15, "  FMEM: %05o", mem.read(k12), k12 );
+#define COL_2   17
+#define COL_3   40
+    mvwprintw(win, y1++, COL_2, "    OF: [%c]", OF() ? 'X' : ' ' );
+    mvwprintw(win, y1++, COL_2, " IRUPT: [%c]", bInterrupt ? (bIntRunning ? '-' : 'X') : ' ' );
+    mvwprintw(win, y1++, COL_2, " INDEX: %04o", idx );
+    mvwprintw(win, y1++, COL_2, "   OPC: %o", (opc & 070000) >> 12 );
+    mvwprintw(win, y1++, COL_2, "    QC: %o", qc );
+    mvwprintw(win, y1++, COL_2, "EXTEND: [%c]", bExtracode ? 'X' : ' ' );
+    mvwprintw(win, y1++, COL_2, "   CYR: [%05o]", mem.read12(CYR_REG));
+    mvwprintw(win, y1++, COL_2, "    SR: [%05o]", mem.read12(SR_REG));
+    mvwprintw(win, y1++, COL_2, "   CYL: [%05o]", mem.read12(CYL_REG));
+    mvwprintw(win, y1++, COL_2, "  EDOP: [%05o]", mem.read12(EDOP_REG));
+//    mvwprintw(win, 2, 15, "  EMEM: %05o [%04o]", mem.read12(k10), k10 );
+//    mvwprintw(win, 2, 15, "  FMEM: %05o", mem.read12(k12), k12 );
 
     y1 = 0;
     for( r=0; r<8; r++, y1++ ) {
-        mvwprintw(win, y1, 40, "%05o: %05o", mwAddr+r, mem.read12(mwAddr+r) & MASK_15_BITS);
+        mvwprintw(win, y1, COL_3, "%05o: %05o", mwAddr+r, mem.readPys(mwAddr+r) & MASK_15_BITS);
     }
 
     y+=2;
@@ -112,9 +116,6 @@ void CCpu::dispReg(WINDOW *win)
         mvwprintw(win, y++, 0, " IDX [%04o] -> [%05o] -> %05o", idx,  mem.addr2mem(k10+idx), mem.read12(k10+idx) );
         mvwprintw(win, y++, 0, " IDX [%04o] -> [%05o] -> %05o", idx,  mem.addr2mem(k12+idx), mem.read12(k12+idx) );
     }
-//    mvwprintw(win, 2, 0, "BB: %05o[fb:%o eb:%o] ", mem.read(6), (mem.read(6)>>10)&037, mem.read(6)&07);
-//    mvwprintw(win, 3, 0, "EB: %05o(%o) ", mem.read(3), (mem.read(3)>>8)&07);
-//    mvwprintw(win, 4, 0, "FB: %05o(%o) ", mem.read(4), (mem.read(4)>>10)&037);
 }
 
 

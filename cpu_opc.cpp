@@ -62,27 +62,28 @@ int CCpu::op1(void)
         // be set to +O. If (K) < -0, we take the instruction at I + 3, and (A) will be set
         // to its absolute value less 1. If (K) = -0, we take the instruction at I + 4, and
         // (A) will be set to + 0. CCS always leaves a positive quantity in A. 
-        m = mem.read(k10);
-//        fprintf(logFile,"A: %05o - ", m);
+        m = mem.read12(k10);
+        fprintf(logFile,"A: %05o - ", m);
         if( m > POS_ZERO && IS_POS(m) ) {
-//            fprintf(logFile,"> +0");
+            fprintf(logFile,"> +0");
             jmp = 0;
         } else if( m == POS_ZERO ) {
-//            fprintf(logFile,"= +0");
+            fprintf(logFile,"= +0");
             jmp = 1;
         } else if( (m&MASK_15_BITS) == NEG_ZERO ) {
-//            fprintf(logFile,"= -0");
+            fprintf(logFile,"= -0");
             jmp = 3;
         } else {
             // Is negative ...
-//            fprintf(logFile,"< -0");
+            fprintf(logFile,"< -0");
             jmp = 2;
         }
         setA( DABS(m) );
         nextPC += jmp;
+        fprintf(logFile," PC: %04o\n", nextPC);
         //mem.setZ(mem.getZ() + jmp);
         if( IS_EDIT_REG(k10) )
-            mem.write(k10, m); // Update (k)!
+            mem.write12(k10, m); // Update (k)!
         break;
     default: // TCF
         // The "Transfer Control to Fixed" instruction jumps to a
@@ -158,11 +159,11 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
         mem.setL(POS_ZERO);
         // Save the results.
         if( k10 < 3 )
-            mem.write(k10, SignExtend(Lsw));
+            mem.write12(k10, SignExtend(Lsw));
         else
             mem.write12(k10, Lsw); //SignExtend(Lsw));
         if( (k10-1) < 3 )
-            mem.write(k10-1, Msw);
+            mem.write12(k10-1, Msw);
         else
             mem.write12(k10-1, OverflowCorrected(Msw));
         bOF = false;
@@ -170,26 +171,28 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
         break;
     case 01:    // LXCH
         l = mem.getL();
-        x1 = mem.read(k10);
+        x1 = mem.read12(k10);
         mem.write12(k10,l);
         mem.setL(x1);
         ret = 0;
         break;
     case 02:    // INCR
-        x1 = mem.read(k10);
+        x1 = mem.read12(k10);
         mem.write12(k10,x1+1);
         ret = 0;
         break;
     case 03: // ADS
         //a = mem.getA();
-        //x1 = mem.read(k10);
+        //x1 = mem.read12(k10);
         //a = AddSP16(a,x1);add1st
-        if( k10 < REG_EB )
-            a = add1st(mem.getA(), mem.read(k10));
-        else
-            a = add1st(mem.getA(), SignExtend(mem.read(k10)));
+        if( k10 < REG_EB ) {
+            a = add1st(mem.getA(), mem.read12(k10));
+            mem.write12(k10, a);
+        } else {
+            a = add1st(mem.getA(), SignExtend(mem.read12(k10)));
+            mem.write12(k10, OverflowCorrected(a));
+        }
         setA(a);
-        mem.write12(k10,a);
         ret = 0;
         break;
     default:
@@ -206,7 +209,7 @@ int CCpu::op3(void)
     uint16_t k = SignExtend(mem.read12(k12));
     setA(k);
     if( IS_EDIT_REG(k12) )
-        mem.write(k12, k); // Update (K)!
+        mem.write12(k12, k); // Update (K)!
     if( k12 != REG_A && k12 != REG_Q )
         bOF = false;
     return 0;
@@ -281,7 +284,7 @@ int CCpu::op5(void)
         break;
     case 02:
         // TS
-        a = mem.read(0);
+        a = mem.read12(0);
         switch( k10 ) {
         case 00000:
             if( OF() ) {
@@ -311,20 +314,20 @@ int CCpu::op5(void)
         ret = 0;
         break;
     case 03:    // XCH
-        a = mem.read(0);
+        a = mem.read12(0);
         x = mem.read12(k10);
-        mem.write(0,x);
+        mem.write12(0,x);
         mem.write12(k10,a);
         ret = 0;
         break;
     case 00:
         if( k12 == 00017 ) {
             // RESUME
-            nextPC = mem.read(REG_ZRUPT);
+            nextPC = mem.read12(REG_ZRUPT);
             bIntRunning = false;
         } else {
             // INDEX
-            idx = mem.read(k10);
+            idx = mem.read12(k10);
             mem.write12(k10,idx);
         }
         ret = 0;
@@ -344,10 +347,10 @@ int CCpu::op6(void)
     
     // AD - add and update overflow
 //    mem.write(0, add1st(SignExtend(a), SignExtend(m)));
-    mem.write(0, add1st(a, SignExtend(m)));
+    mem.write12(0, add1st(a, SignExtend(m)));
     
     if( IS_EDIT_REG(k12) )
-        mem.write(k12, m); // Update (K)!
+        mem.write12(k12, m); // Update (K)!
     ret = 0;
     return ret;
 }
