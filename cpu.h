@@ -16,6 +16,8 @@ class CCpu {
     bool bClrExtra = true;
     bool bInterrupt = false;
     bool bIntRunning = false;
+    bool bTime6Enabled = false;
+    uint16_t    intRunning = 0;
     __uint16_t  opc;    // The current opcode
     __uint16_t  k12;    // Current 12 bit k value
     __uint16_t  k10;    // Current 10 bit k value
@@ -90,7 +92,7 @@ public:
 
 //        if( s & 0x8000 )
 //            s++;
-        bOF |= s2 != (s & 0x4000);
+        bOF |= s2 != (s & S1_MASK);
         cs = s;
         //printf("(s2:%d s1:%d of:%d)", s2 ? 1:0, (s&0x4000)?1:0, );
         if( bOF ) {
@@ -103,7 +105,7 @@ public:
     }
     void setA(uint16_t a) {
         mem.setA(a);
-        s2 = a & 0x4000;
+        s2 = a & S1_MASK;
         //bOF = false;
     }
     void setL(uint16_t l) {
@@ -188,11 +190,12 @@ public:
     uint16_t AddSP16 (uint32_t Addend1, uint32_t Addend2) {
         uint32_t Sum;
         Sum = Addend1 + Addend2;
+//        fprintf(logFile,"AddSP16: %05o + %05o = %05o\n", Addend1, Addend2, Sum);
         if (Sum & OVF_MASK) {
             Sum += POS_ONE;
             Sum &= MASK_16_BITS;
+//            fprintf(logFile,"AddSP16: Overflow correctio: %05o\n", Sum);
         }
-        //fprintf(logFile,"AddSP16: %05o + %05o = %05o\n", Addend1, Addend2, Sum);
         return (Sum);
     }
 

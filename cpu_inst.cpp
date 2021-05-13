@@ -32,7 +32,7 @@ void CCpu::readCore(char *core)
 //            printf("\n");
         }
     }
-#define SELF_TEST
+//#define SELF_TEST
 #ifdef SELF_TEST
     mem.setFB(020 * FIXED_BLK_SIZE);
     mem.setZ(02070);
@@ -107,10 +107,12 @@ int CCpu::sst(void)
     int ret = -1;
     char logBuf[1024];
     int ln;
-    ln = sprintf(logBuf, "%s", disasm());
+    ln = sprintf(logBuf, "[%c%5d]%s", bIntRunning ? '*':' ', clockCnt, disasm());
     uint16_t    omem = mem.readPys(mwBreak);
     __uint16_t op = getOP();
     bClrExtra = true;
+
+    bOF = ValueOverflowed (mem.getA() & MASK_16_BITS ) != POS_ZERO;
 
     // PC is incremented before execution starts!
     nextPC = mem.step();
@@ -118,7 +120,6 @@ int CCpu::sst(void)
     // Assume every instruction takes 2 MCT.
     mct = 2;
     if( bExtracode ) {
-        mvprintw(19,0,"EXTRA CODE!");
         switch( op & OPCODE_MASK ) {
             case 000000: ret = op0ex(); break;
             case 010000: ret = op1ex(); break;
@@ -151,7 +152,7 @@ int CCpu::sst(void)
     dTime += mct;
 
     __uint16_t r = mem.getA();
-    int nl = 45-ln;
+    int nl = 50-ln;
     if (nl < 1) nl = 1;
     ln += sprintf(logBuf+ln,"%*.*s[%d:%05o] ", nl,nl,"A",r & 0100000 ? 1 : 0, r & MASK_15_BITS);
     r = mem.getL();
@@ -161,18 +162,22 @@ int CCpu::sst(void)
     r = mem.getBB();
     ln += sprintf(logBuf+ln,"BB[%05o] ", r & MASK_15_BITS);
     ln += sprintf(logBuf+ln,"IDX[%05o] ", idx);
+    ln += sprintf(logBuf+ln,"IZ[%05o] ", mem.read12(REG_ZRUPT));
+    ln += sprintf(logBuf+ln,"IB[%05o] ", mem.read12(REG_BRUPT));
+    ln += sprintf(logBuf+ln,"IBB[%05o] ", mem.read12(REG_BBRUPT));
     fprintf(logFile,"%s\n", logBuf);
 
-    if( dTime > 427 ) { // 5ms/11.7us
-        // 5 ms has ellapsed
+    if( dTime > 43 ) { // 0.5ms/11.7us
+        // 0.5 ms has ellapsed
         incTime();
         dTime = 0;
     }
 
     mem.setZ(nextPC);
-
-    if( bInterrupt && !bIntRunning && !bExtracode && !idx && gInterrupt != 0 ) {
+    if( bInterrupt && !bIntRunning && !bExtracode && !idx && !OF() && gInterrupt != 0 ) {
+//        uint16_t    iPC = 0;
         nextPC = handleInterrupt();
+        //nextPC = iPC ? iPC : nextPC; 
     }
     if( nextPC )
         mem.setZ(nextPC);
@@ -211,6 +216,7 @@ uint16_t CCpu::handleInterrupt(void)
             gInterrupt &= ~(1<<i);
             fprintf(logFile,"Stop and continue @ %05o\n", nextPC);
             bIntRunning = true;
+            intRunning = iPc;
             stopAgc();
             return nextPC;
         }
@@ -230,29 +236,37 @@ void CCpu::addInterrupt(int i)
 }
 
 void CCpu::incTime(void) {
-    static uint8_t ms5 = 0;
+    // Count all 0.5ms
+    static uint32_t ms05 = 0;
     uint16_t    i = 0;
 
-    switch( ms5 & 0x01 ) {
-    case 0: // Even 5 ms
+    switch( ms05 % 20 ) {
+    case 0: // Every 10 ms
+        incTIME1(); // Increment every 10ms
         i = mem.incTimer(REG_TIME3);
         if( i )
             addInterrupt(REG_TIME3);
+        break;
+    case 10: // Every 10m (5ms out of phase)
         i = mem.incTimer(REG_TIME5);
         if( i )
             addInterrupt(REG_TIME5);
         break;
-    case 1: // Odd 5 ms
-        incTIME1(); // Increment every 10ms
+    case 15: // Every 10ms (7.5ms out of phase)
         i = mem.incTimer(REG_TIME4);
         if( i )
             addInterrupt(REG_TIME4);
-        i = mem.incTimer(REG_TIME6);
-        if( i )
-            addInterrupt(REG_TIME6);
         break;
     }
-    ms5++;
+    // Every 0.5ms (~1/1600s)
+    if( bTime6Enabled ) {
+        i = mem.incTimer(REG_TIME6);
+        if( i ) {
+            addInterrupt(REG_TIME6);
+            bTime6Enabled = false;
+        }
+    }
+    ms05++;
 }
 
 void CCpu::incTIME1(void)

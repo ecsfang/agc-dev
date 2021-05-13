@@ -6,76 +6,81 @@ int CCpu::op0ex(void)
 {
     int ret = -1;
     __uint16_t kc = opc & MASK_IO_ADDRESS;
-    __uint16_t io;
+    __uint16_t io = mem.readIO(kc);
     __uint16_t a = mem.getA();
     switch (opc & 077000) {
     case 000000:    // READ
-        fprintf(logFile," I/O READ %03o\n", kc);
         if( IS_L_OR_Q(kc) )
-            setA(mem.readIO(kc));
+            setA(io);
         else
-            setA(SignExtend(mem.readIO(kc)));
+            setA(SignExtend(io));
+        fprintf(logFile," I/O READ %03o <-- %05o\n", kc, io);
         ret = 0;
         break;
     case 001000:    // WRITE
-        fprintf(logFile," I/O WRITE %03o <-- %05o\n", kc, a);
+        fprintf(logFile," I/O WRITE %03o --> %05o\n", kc, a);
         if( IS_L_OR_Q(kc) )
             mem.write12(kc, a);
         else
             mem.writeIO(kc, OverflowCorrected(a));
+        if( kc == 013 )
+            bTime6Enabled = (a & BIT_15) ? true : false;
         ret = 0;
         break;
     case 002000:    // RAND
-        fprintf(logFile," I/O RAND %03o\n", kc);
         if( IS_L_OR_Q(kc) )
-            setA(a & mem.readIO(kc));
+            setA(a & io);
         else
-            setA(SignExtend(OverflowCorrected(a) & mem.readIO(kc)));
+            setA(SignExtend(OverflowCorrected(a) & io));
+        fprintf(logFile," I/O RAND %03o <-- %05o (%05o & %05o)\n", kc, a&io, a, io);
         ret = 0;
         break;
     case 003000:    // WAND
-        fprintf(logFile," I/O WAND %03o <-- %05o\n", kc, a);
-        if( IS_L_OR_Q(kc) ) {
-            io = a & mem.readIO(kc);
-            setA(io);
-            mem.writeIO(kc, io);
-        } else {
-            io = OverflowCorrected(a) & mem.readIO(kc);
-            setA(SignExtend(io));
-            mem.writeIO(kc, io);
+        {
+            uint16_t xio = a & io;
+            if( IS_L_OR_Q(kc) ) {
+                setA( xio);
+            } else {
+                xio = OverflowCorrected(a) & io;
+                setA(SignExtend(xio));
+            }
+            mem.writeIO(kc, xio);
+            fprintf(logFile," I/O WAND %03o --> %05o (%05o & %05o)\n", kc, mem.getA(), a, io);
         }
         ret = 0;
         break;
     case 004000:    // ROR
-        fprintf(logFile," I/O ROR %03o\n", kc);
         if( IS_L_OR_Q(kc) )
-            setA(a | mem.readIO(kc));
+            setA(a | io);
         else
-            setA(SignExtend(OverflowCorrected(a) | mem.readIO(kc)));
+            setA(SignExtend(OverflowCorrected(a) | io));
+        fprintf(logFile," I/O ROR %03o <-- %05o (%05o | %05o)\n", kc, mem.getA(), a, io);
         ret = 0;
         break;
     case 005000:    // WOR
-        fprintf(logFile," I/O WOR %03o <-- %05o\n", kc, a);
-        if( IS_L_OR_Q(kc) ) {
-            io = a | mem.readIO(kc);
-            setA(io);
-            mem.writeIO(kc, io);
-        } else {
-            io = OverflowCorrected(a) | mem.readIO(kc);
-            setA(SignExtend(io));
-            mem.writeIO(kc, io);
+        {
+            uint16_t xio = a | io;
+            if( IS_L_OR_Q(kc) ) {
+                setA(xio);
+            } else {
+                xio = OverflowCorrected(a) | io;
+                setA(SignExtend(xio));
+            }
+            mem.writeIO(kc, xio);
+            fprintf(logFile," I/O WOR %03o --> %05o (%05o | %05o)\n", kc, mem.getA(), a, io);
         }
         ret = 0;
         break;
     case 006000:    // RXOR
-        fprintf(logFile," I/O RXOR %03o\n", kc);
         if( IS_L_OR_Q(kc) )
-            setA(a ^ mem.readIO(kc));
+            setA(a ^ io);
         else
-            setA(SignExtend(OverflowCorrected(a) ^ mem.readIO(kc)));
+            setA(SignExtend(OverflowCorrected(a) ^ io));
         ret = 0;
+        fprintf(logFile," I/O RXOR %03o <-- %05o (%05o ^ %05o)\n", kc, mem.getA(), a, io);
         break;
     case 007000:    // EDRUPT
+        fprintf(logFile," EDRUPT - not handled!\n");
         mct = 3;
         break;
     default:
@@ -146,21 +151,17 @@ int CCpu::op1ex(void)
             // Fetch the values;
             AbsK = AbsSP(OverflowCorrected(Div16));
 
-            fprintf(logFile,"DIV: |a| = %05o |l| = %05o (%04o) = %05o\n",AbsA, AbsL, k10, AbsK);
-
             if (AbsA > AbsK || (AbsA == AbsK && AbsL != POS_ZERO) || ValueOverflowed(Div16) != POS_ZERO)
             {
                 // The divisor is smaller than the dividend, or the divisor has
                 // overflow. In both cases, we fall back on a slower simulation
                 // of the hardware registers, which will produce "total nonsense"
                 // (that nonetheless will match what the actual AGC would have gotten).
-            fprintf(logFile,"Do SimulateDV()\n");
                 SimulateDV(mem.getA(), mem.getL(), Div16);
                 //  SimulateDV(State, Div16);
             }
             else if (AbsA == 0 && AbsL == 0)
             {
-            fprintf(logFile,"Just zeros!\n");
                 // The dividend is 0 but the divisor is not. The standard DV sign
                 // convention applies to A, and L remains unchanged.
                 if ((040000 & mem.getL()) == (040000 & OverflowCorrected(Div16)))
@@ -182,7 +183,6 @@ int CCpu::op1ex(void)
             }
             else if (AbsA == AbsK && AbsL == POS_ZERO)
             {
-            fprintf(logFile,"A==K, L == 0\n");
                 // The divisor is equal to the dividend.
                 if (AccPair[0] == OverflowCorrected(Div16)) // Signs agree?
                 {
@@ -204,13 +204,11 @@ int CCpu::op1ex(void)
                 // and then convert back afterward.  Incidentally, we know we
                 // aren't dividing by zero, since we know that the divisor is
                 // greater (in magnitude) than the dividend.
-            fprintf(logFile,"Divisor larger than dividend!\n");
                 Dividend = agc2cpu2(Dividend);
                 Divisor = agc2cpu(OverflowCorrected(Div16));
                 Quotient = Dividend / Divisor;
                 Remainder = Dividend % Divisor;
                 mem.setA(SignExtend(cpu2agc(Quotient)));
-            fprintf(logFile,"QUO %05o REM %05o DIV %05o\n", Quotient, Remainder, Dividend);
                 if (Remainder == 0)
                 {
                     // In this case, we need to make an extra effort, because we
@@ -224,12 +222,15 @@ int CCpu::op1ex(void)
                     mem.setL(SignExtend(cpu2agc(Remainder)));
             }
         }
-        {
-        uint16_t a = mem.getA();
-        uint16_t l = mem.getL();
-        mem.setA(l);
-        mem.setL(a);
-        }
+/*        {
+            // SWAP ... :P
+            uint16_t a = mem.getA();
+            uint16_t l = mem.getL();
+            if( a == 0 && l == 020000 ) {
+                mem.setA(l);
+                mem.setL(a);
+            }
+        }**/
         bOF = false;
         ret = 0;
         mct = 6;
@@ -300,12 +301,25 @@ int CCpu::op2ex(void)
         break;
     case 01:
         // QXCH
-        q = mem.getQ();
-        x = mem.read12(k10);
-        mem.write12(k10, OverflowCorrected(q));
-        mem.setQ(SignExtend(x));
-//        fprintf(logFile,"QXCH %05o <-> %05o\n", q, x);
-//        fflush(logFile);
+        switch( k10 ) {
+        case REG_Q:
+            break;
+        case REG_ZERO:
+            mem.setQ(POS_ZERO);
+            break;
+        default:
+            if( k10 < REG_EB ) {
+                q = mem.getQ();
+                mem.setQ(mem.read12(k10));
+                mem.write12(k10, q);
+                if( k10 == REG_Z )
+                    nextPC = mem.getZ();
+            } else {
+	            q = OverflowCorrected (mem.getQ());
+	            mem.setQ(SignExtend (mem.read12(k10)));
+	            mem.write12(k10,q);
+    	    }
+        }
         ret = 0;
         break;
     case 02:

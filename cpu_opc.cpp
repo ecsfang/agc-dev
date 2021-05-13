@@ -29,7 +29,6 @@ int CCpu::op0(void)
     default:        // TC (or TCR or XLQ or XXALQ)
         if( opc != 000002 ) // Not return ...
             mem.setQ( nextPC & MASK_16_BITS);   // Set return address
-        // mem.setZ(k12);
         nextPC = k12 & MASK_16_BITS;
         ret = 0;
         mct = 1;
@@ -185,10 +184,10 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
         //x1 = mem.read12(k10);
         //a = AddSP16(a,x1);add1st
         if( k10 < REG_EB ) {
-            a = add1st(mem.getA(), mem.read12(k10));
+            a = AddSP16(mem.getA(), mem.read12(k10));
             mem.write12(k10, a);
         } else {
-            a = add1st(mem.getA(), SignExtend(mem.read12(k10)));
+            a = AddSP16(mem.getA(), SignExtend(mem.read12(k10)));
             mem.write12(k10, OverflowCorrected(a));
         }
         setA(a);
@@ -203,9 +202,11 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
 
 int CCpu::op3(void)
 {
+    // CA CAE CAF
     // The "Clear and Add" (or "Clear and Add Erasable" or "Clear and Add Fixed") instruction moves
     // the contents of a memory location into the accumulator.
-    uint16_t k = SignExtend(mem.read12(k12));
+    //uint16_t k = SignExtend(mem.read12(k12));
+    uint16_t k = k12 < REG_EB ? mem.read12(k12) : SignExtend(mem.read12(k12));
     setA(k);
     if( IS_EDIT_REG(k12) )
         mem.update(k12); // Update (K)!
@@ -303,7 +304,8 @@ int CCpu::op5(void)
                 setA(SignExtend(POS_OVF() ? POS_ONE : NEG_ONE));
                 nextPC++;
             }
-            mem.write12(k10,k10 < REG_EB ? a : ovf_corr(a));
+//            mem.write12(k10,k10 < REG_EB ? a : ovf_corr(a));
+            mem.write12(k10, ovf_corr(a));
         }
         bOF = false;
         ret = 0;
@@ -313,7 +315,7 @@ int CCpu::op5(void)
             break;
         a = mem.getA();
         x = mem.read12(k10);
-        mem.setA(x);
+        mem.setA(k10 < REG_EB ? x : SignExtend(x));
         mem.write12(k10,k10 < REG_EB ? a : ovf_corr(a));
         if( k10 == REG_Z )
             nextPC = a;
@@ -324,6 +326,7 @@ int CCpu::op5(void)
             // RESUME
             nextPC = mem.read12(REG_ZRUPT);
             bIntRunning = false;
+            intRunning = 0;
         } else {
             // INDEX
             idx = mem.read12(k10);
@@ -346,7 +349,7 @@ int CCpu::op6(void)
     
     // AD - add and update overflow
 //    mem.write(0, add1st(SignExtend(a), SignExtend(m)));
-    mem.write12(0, add1st(a, SignExtend(m)));
+    mem.setA(AddSP16(a, k12 < REG_EB ? m : SignExtend(m)));
     
     if( IS_EDIT_REG(k12) )
         mem.update(k12); // Update (K)!

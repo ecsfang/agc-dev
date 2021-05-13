@@ -310,6 +310,8 @@ map<uint16_t,char*> symTab;
 
 void updateScreen(WINDOW *wnd, CCpu *cpu, bool bRun)
 {
+    if( bRun )
+        return;
     cpu->dispReg(wnd);
     if( !bRun ) {
         for(int n=0; n<5; n++)

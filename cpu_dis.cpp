@@ -18,6 +18,10 @@ Reg_t   regs[] = {
     { "FB", 004, MASK_15_BITS },
     { "Z",  005, MASK_12_BITS },
     { "BB", 006, MASK_15_BITS },
+    { NULL, 000, MASK_15_BITS },
+    { "IZ", 015, MASK_15_BITS },
+    { "IB", 017, MASK_15_BITS },
+    { "IBB", 016, MASK_15_BITS },
 /*    { "zero", 007, 0x7FFF },
     { "ARUPT", 010, 0x7FFF },
     { "LRUPT", 011, 0x7FFF },
@@ -33,7 +37,7 @@ Reg_t   regs[] = {
     { "BB", 06, 0x7FFF },
     { "BB", 06, 0x7FFF },
     { "BB", 06, 0x7FFF },*/
-    { NULL, 0, 0 }
+//    { NULL, 0, 0 }
 };
 
 extern map<uint16_t,char*> symTab;
@@ -61,30 +65,38 @@ char *CCpu::mAddr(uint16_t a)
     return addr;
 }
 
+#define COL_2   20
+#define COL_3   40
+
 void CCpu::dispReg(WINDOW *win)
 {
     int y1, y = 0;
     getOP(false);
     wclear(win);
     uint16_t r;
-    for( ; regs[y].name; y++ ) {
+    for( y=0; y<(sizeof(regs)/sizeof(Reg_t)); y++ ) {
         r = mem.read12(regs[y].addr);
-        if( regs[y].addr < REG_EB ) {
-            mvwprintw(win, y, 0, "%2s: %d:%05o ", regs[y].name, r & 0100000 ? 1 : 0, r & regs[y].mask);
-        } else
-            mvwprintw(win, y, 0, "%2s:   %05o ", regs[y].name, r & regs[y].mask);
-        if( regs[y].addr == REG_EB ) mvwprintw(win, y, 12, "[%02o]", (r & EB_MASK)>>EB_SHIFT);
-        if( regs[y].addr == REG_FB ) mvwprintw(win, y, 12, "[%02o]", (r & FB_MASK)>>FB_SHIFT);
+        if( regs[y].name) {
+            if( regs[y].addr < REG_EB ) {
+                mvwprintw(win, y, 0, "%3s: %d%d:%05o ", regs[y].name, r&S2_MASK ? 1 : 0, r & S1_MASK ? 1 : 0, r & regs[y].mask);
+            } else
+                mvwprintw(win, y, 0, "%3s:    %05o ", regs[y].name, r & regs[y].mask);
+            if( regs[y].addr == REG_EB ) mvwprintw(win, y, 12, "[%02o]", (r & EB_MASK)>>EB_SHIFT);
+            if( regs[y].addr == REG_FB ) mvwprintw(win, y, 12, "[%02o]", (r & FB_MASK)>>FB_SHIFT);
+        }
     }
     y++;
-    mvwprintw(win, y++, 0, "   %6.1f us", clockCnt * 11.7);
-    mvwprintw(win, y++, 0, "%6d %3d MCT", clockCnt, dTime);
 
     y1 = 0;
-#define COL_2   17
-#define COL_3   40
-    mvwprintw(win, y1++, COL_2, "    OF: [%c]", OF() ? 'X' : ' ' );
-    mvwprintw(win, y1++, COL_2, " IRUPT: [%c]", bInterrupt ? (bIntRunning ? '-' : 'X') : ' ' );
+
+    char iBuf[8];
+    if( intRunning )
+        sprintf(iBuf, "%04o", intRunning);
+    else
+        iBuf[0] = '\0';
+
+    mvwprintw(win, y1++, COL_2, "    OF: [%c]", OF() ? (POS_OVF()?'+':'-') : ' ' );
+    mvwprintw(win, y1++, COL_2, " IRUPT: [%c]%s", bInterrupt ? (bIntRunning ? '-' : 'X') : ' ', iBuf );
     mvwprintw(win, y1++, COL_2, " INDEX: %04o", idx );
     mvwprintw(win, y1++, COL_2, "   OPC: %o", (opc & 070000) >> 12 );
     mvwprintw(win, y1++, COL_2, "    QC: %o", qc );
@@ -98,10 +110,15 @@ void CCpu::dispReg(WINDOW *win)
 
     y1 = 0;
     for( r=0; r<8; r++, y1++ ) {
-        mvwprintw(win, y1, COL_3, "%05o: %05o", mwAddr+r, mem.readPys(mwAddr+r) & MASK_15_BITS);
+        mvwprintw(win, y1, COL_3, "%05o: %05o", mwAddr+r, mem.read12(mwAddr+r) & MASK_15_BITS);
     }
+    y1++;
+    mvwprintw(win, y1++, COL_3, "   %7.1f us", clockCnt * 11.7);
+    mvwprintw(win, y1++, COL_3, "%6d %3d MCT", clockCnt, dTime);
 
-    y+=2;
+    //y+=2;
+
+    y1 = y;
 
     if( k10 > 0 )
         mvwprintw(win, y, 0, "[MEM10(k)] %04o [%05o] -> %05o", k10-1,  mem.addr2mem(k10-1), mem.read12(k10-1) & MASK_15_BITS );
@@ -116,6 +133,11 @@ void CCpu::dispReg(WINDOW *win)
         mvwprintw(win, y++, 0, " IDX [%04o] -> [%05o] -> %05o", idx,  mem.addr2mem(k10+idx), mem.read12(k10+idx) );
         mvwprintw(win, y++, 0, " IDX [%04o] -> [%05o] -> %05o", idx,  mem.addr2mem(k12+idx), mem.read12(k12+idx) );
     }
+    mvwprintw(win, y1++, COL_3, "TIME1:2 [%05o:%05o]", mem.read12(REG_TIME2), mem.read12(REG_TIME1));
+    mvwprintw(win, y1++, COL_3, "TIME3   [%05o]", mem.read12(REG_TIME3));
+    mvwprintw(win, y1++, COL_3, "TIME4   [%05o]", mem.read12(REG_TIME4));
+    mvwprintw(win, y1++, COL_3, "TIME5   [%05o]", mem.read12(REG_TIME5));
+    mvwprintw(win, y1++, COL_3, "TIME6   [%05o]", mem.read12(REG_TIME6));
 }
 
 
@@ -342,7 +364,7 @@ void CCpu::dis5(void)
         }
         break;
     case 03:
-        pDis += sprintf(disBuf+pDis, "XCF %s", mAddr(k10));
+        pDis += sprintf(disBuf+pDis, "XCH %s", mAddr(k10));
         break;
     case 00:
         if( k12 == 00017 )
@@ -376,8 +398,12 @@ char *CCpu::disasm(int offs)
     uint16_t pc = mem.getPysZ()+offs;
     uint8_t blk = (pc - 010000) / FIXED_BLK_SIZE;
     getOP(false, offs);
+    bool bEx = bExtracode;
 
-    char ex = bExtracode ? '#':'>';
+    if( mem.read12(zpc-1) == 00006 )
+        bEx = true;
+
+    char ex = bEx ? '#':'>';
 
     if( offs )
         pDis += sprintf(disBuf+pDis, "          %05o   ", opc);
@@ -405,7 +431,7 @@ char *CCpu::disasm(int offs)
                 pDis += sprintf(disBuf+pDis, "[%02o,%04o] %05o %c ", blk, zpc, opc, ex);
         }
     }
-    if( bExtracode && !offs) {
+    if( bEx ) {
         switch( opc & OPCODE_MASK ) {
             case 000000: dis0ex(); break;
             case 010000: dis1ex(); break;
@@ -419,27 +445,6 @@ char *CCpu::disasm(int offs)
                 pDis += sprintf(disBuf+pDis, "Unknown extra code %05o!", opc);
         }
     } else {
-/*        if( offs )
-            pDis += sprintf(disBuf+pDis, "          %05o   ", opc);
-        else {
-        if( pc < 04000 ) {
-            // Erasable memory
-            blk = pc / 0400;
-            pDis += sprintf(disBuf+pDis, "%05o [E%o %04o] %05o > ", pc, blk, mem.getZ()+offs, opc);
-        } else {
-            // Fixed memory
-            if( pc >= 010000 && pc <012000 )
-                blk = 0;
-            else if( pc >= 012000 && pc <014000 )
-                blk = 1;
-            else if( pc >= 004000 && pc <006000 )
-                blk = 2;
-            else if( pc >= 006000 && pc <010000 )
-                blk = 3;
-            pDis += sprintf(disBuf+pDis, "%05o [%02o,%04o] %05o > ", pc, blk, mem.getZ()+offs, opc);
-        }
-        }*/
-            //pDis += sprintf(disBuf+pDis, "[%04o(%06o)] %05o > ", mem.getZ()+offs, mem.getPysZ()+offs, opc);
         switch( opc & OPCODE_MASK ) {
             case 000000: dis0(); break;
             case 010000: dis1(); break;

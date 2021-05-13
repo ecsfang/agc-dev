@@ -2,6 +2,7 @@
 #define __MEMORY_H__
 
 #include <memory.h>
+#include <cstring>
 
 #define ERASABLE_BLK_SIZE   0400
 #define FIXED_BLK_SIZE      02000
@@ -107,7 +108,7 @@ enum {
     REG_FB,         // 04 "fixed bank register"
     REG_Z,          // 05
     REG_BB,         // 06
-    REG__res,       // 07
+    REG_ZERO,       // 07
     REG_ARUPT,      // 10
     REG_LRUPT,      // 11
     REG_QRUPT,      // 12
@@ -311,8 +312,8 @@ public:
                 default:
                     if( addr >= 04000 && addr < 010000 )
                         addr += 010000;
-                    if( addr == REG_Z )
-                        printf("UPDATING Z-REG!! mem[%05o] = %05o\n", addr, data);
+//                    if( addr == REG_Z )
+//                        fprintf(logFile, "UPDATING Z-REG!! mem[%05o] = %05o\n", addr, data);
                     switch(addr) {
                         case CYR_REG:
                             data = (((data & 0x7FFF) >> 1 ) | (data << 14) ) & 0x7FFF;
