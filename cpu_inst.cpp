@@ -37,6 +37,9 @@ void CCpu::readCore(char *core)
     mem.setFB(020 * FIXED_BLK_SIZE);
     mem.setZ(02070);
 #else
+    mem.setEB(6<<EB_SHIFT);
+    mem.write12(01510, 0777); // FAILSW # IF POSITIVE NO RCSMONIT, OTHERWISE 0
+    mem.setEB(0);
     mem.setFB(0); //020 * FIXED_BLK_SIZE);
     mem.setZ(BOOT); //02070);
 #endif
@@ -220,7 +223,7 @@ uint16_t CCpu::handleInterrupt(void)
             fprintf(logFile,"Stop and continue @ %05o\n", nextPC);
             bIntRunning = true;
             intRunning = iPc;
-            stopAgc();
+            //stopAgc();
             return nextPC;
         }
     }

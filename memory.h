@@ -212,6 +212,7 @@ class CMemory {
     __uint16_t  inIoMem[IN_IO_SIZE];
     __uint16_t  outIoMem[OUT_IO_SIZE];
     __uint16_t  FEB;
+    bool        bDSky;
 public:
     CMemory() {
         // Clear all memory
@@ -224,9 +225,15 @@ public:
         inIoMem[031] = 077777;
         inIoMem[032] = 077777;
         inIoMem[033] = 077777;
-
+        bDSky = false;
         FEB = 0;
     }
+    bool dsky(void) {
+        bool dsky = bDSky;
+        bDSky = false;
+        return dsky;
+    }
+    __uint16_t  *getOutMem(void) { return outIoMem; }
     __uint16_t getOP(int offs = 0) {
         return read12((mem.Z+offs) & MASK_12B_ADDRESS);
     }
@@ -369,6 +376,7 @@ public:
                 // Channel 10 is converted externally to the CPU into up to 16 ports,
                 // by means of latching relays.  We need to capture this data.
                 outIoMem[(data>>11) & 017] = data;
+                bDSky = true;
                 break;
             case 015:
             case 016:

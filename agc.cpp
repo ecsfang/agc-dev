@@ -310,6 +310,7 @@ map<uint16_t,char*> symTab;
 
 void updateScreen(WINDOW *wnd, CCpu *cpu, bool bRun)
 {
+    cpu->updateDSKY(wnd, bRun);
     if( bRun )
         return;
     cpu->dispReg(wnd);

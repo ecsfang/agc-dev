@@ -165,6 +165,7 @@ public:
     void dis7ex(void);
 
     void dispReg(WINDOW *win);
+    void updateDSKY(WINDOW *win, bool bRun);
 
     int16_t OverflowCorrected (int Value) {
         return ((Value & MANTISSA_MASK) | ((Value >> 1) & S1_MASK));

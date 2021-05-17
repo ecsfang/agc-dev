@@ -9,7 +9,7 @@ LIBS=-lncurses
 _DEPS = cpu.h memory.h
 DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))
 
-_OBJ = agc.o memory.o cpu_dis.o cpu_inst.o cpu_opc.o cpu_opex.o cpu_imu.o
+_OBJ = agc.o memory.o cpu_dis.o cpu_inst.o cpu_opc.o cpu_opex.o cpu_imu.o dsky.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 $(ODIR)/%.o: %.cpp $(DEPS)
