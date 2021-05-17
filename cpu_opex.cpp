@@ -237,9 +237,10 @@ int CCpu::op1ex(void)
         break;
     default:
         // BZF K
-        if (mem.getA() == 0 || (mem.getA() & NEG_ZERO) == NEG_ZERO)
+        // Check whole word, ie OF is not zero!
+        if (mem.getA() == 0 || (mem.getA() & MASK_16_BITS) == MASK_16_BITS)
         {
-            nextPC = k12; //nextPC = k12; //mem.setZ(k12);
+            nextPC = k12;
             mct = 1;
         }
         ret = 0;
@@ -444,18 +445,10 @@ int CCpu::op6ex(void)
     // memory location in fixed (as opposed to erasable) memory.
     switch( qc ) {
     case 00: // SU
-/*        a = mem.getA();
-        x = mem.read12(k10);
-        mem.setA(a - x);
-        if (IS_EDIT_REG(k10))
-            mem.update(k10); // Update (k)!
-*/
         if (k10 == REG_A)
             mem.setA(SignExtend(NEG_ZERO));
         else //if (k10 < REG_EB)
-            mem.setA(AddSP16(mem.getA(), 0177777 & ~mem.read12(k10)));
-//        else
-//            mem.setA(AddSP16(mem.getA(), 077777 & ~mem.read12(k10)));
+            mem.setA(AddSP16(mem.getA(), MASK_16_BITS & ~mem.read12(k10)));
         if (IS_EDIT_REG(k10))
             mem.update(k10); // Update (k)!
         break;
@@ -464,7 +457,7 @@ int CCpu::op6ex(void)
         if( POS_OVF() ) {
             // Not zero - don't jump!
         } else if( a == POS_ZERO  || IS_NEG(a) ) {
-            nextPC = k12; //mem.setZ(k12);
+            nextPC = k12;
             mct = 1;
         }
         ret = 0;
@@ -477,16 +470,6 @@ int CCpu::op6ex(void)
 int CCpu::op7ex(void)
 {
     // MP
-/*    uint16_t  a,x;
-    uint32_t  dp;
-    a = mem.getA();
-    x = SignExtend(mem.read12(k12));
-    fprintf(logFile,"MP: A:%05o * K:%05o ", a, x);
-    dp = a*x;
-    fprintf(logFile,"--> (%05o : %05o)\n", dp>>15, dp &  MASK_15_BITS);
-    mem.setA(dp>>15);
-    mem.setL(dp&0x7FFF);
-    return 0;*/
 	{
 	  // For MP A (i.e., SQUARE) the accumulator is NOT supposed to
 	  // be overflow-corrected.  I do it anyway, since I don't know
