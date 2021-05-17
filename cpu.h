@@ -146,7 +146,7 @@ public:
     int op7ex(void);
 
     // Disassembler
-    char *disasm(int offs=0);
+    char *disasm(int offs=0, bool bUp=true);
     void dis0(void);
     void dis1(void);
     void dis2(void);
@@ -327,6 +327,9 @@ public:
         op1ex();
         printf("==> A: %05o L: %05o\n", mem.getA(), mem.getL());
     }
+    int BurstOutput (int DriveBitMask, int CounterRegister, int Channel);
+    void UpdateIMU(void);
+
 };
 
 #endif//__CPU_H__

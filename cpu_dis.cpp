@@ -391,13 +391,14 @@ void CCpu::dis7(void)
 }
 
 
-char *CCpu::disasm(int offs)
+char *CCpu::disasm(int offs, bool bUpdate)
 {
     pDis = 0;
     uint16_t zpc = mem.getZ()+offs;
     uint16_t pc = mem.getPysZ()+offs;
     uint8_t blk = (pc - 010000) / FIXED_BLK_SIZE;
-    getOP(false, offs);
+    if( bUpdate )
+        getOP(false, offs);
     bool bEx = bExtracode;
 
     if( mem.read12(zpc-1) == 00006 )

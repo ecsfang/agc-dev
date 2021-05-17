@@ -273,10 +273,13 @@ public:
         return mem.TIME4;
     }
 
-    __uint16_t incTimer(__uint16_t t) {
-        __uint16_t tv = read12(t);
-        write12(t, (tv+1) & MASK_14_BITS);
-        return (tv == MASK_14_BITS);
+    bool incTimer(__uint16_t t) {
+        __uint16_t tv = inc(t);
+        if( tv & BIT_15 ) {
+            write12(t, 0);
+            return true;
+        }
+        return false;
     }
 
     __uint16_t step() {
@@ -388,8 +391,10 @@ public:
     void  update(__uint16_t addr) {
         write12(addr, read12(addr));
     }
-    void  inc(__uint16_t addr) {
-        write12(addr, read12(addr)+1);
+    __uint16_t  inc(__uint16_t addr) {
+        __uint16_t i = read12(addr)+1; 
+        write12(addr, i);
+        return i;
     }
 #define SIGN_EXTEND(w) ((w & MASK_15_BITS) | ((w << 1) & S2_MASK))
     __uint16_t  readPys(__uint16_t addr) {

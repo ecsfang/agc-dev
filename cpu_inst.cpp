@@ -107,10 +107,13 @@ int CCpu::sst(void)
     int ret = -1;
     char logBuf[1024];
     int ln;
-    ln = sprintf(logBuf, "[%c%5d]%s", bIntRunning ? '*':' ', clockCnt, disasm());
     uint16_t    omem = mem.readPys(mwBreak);
     __uint16_t op = getOP();
     bClrExtra = true;
+
+    ln = sprintf(logBuf, "[%c%5d]%s", bIntRunning ? '*':' ', clockCnt, disasm(0,false));
+
+    UpdateIMU();
 
     bOF = ValueOverflowed (mem.getA() & MASK_16_BITS ) != POS_ZERO;
 
@@ -238,30 +241,25 @@ void CCpu::addInterrupt(int i)
 void CCpu::incTime(void) {
     // Count all 0.5ms
     static uint32_t ms05 = 0;
-    uint16_t    i = 0;
 
     switch( ms05 % 20 ) {
     case 0: // Every 10 ms
         incTIME1(); // Increment every 10ms
-        i = mem.incTimer(REG_TIME3);
-        if( i )
+        if( mem.incTimer(REG_TIME3) )
             addInterrupt(REG_TIME3);
         break;
     case 10: // Every 10m (5ms out of phase)
-        i = mem.incTimer(REG_TIME5);
-        if( i )
+        if( mem.incTimer(REG_TIME5) )
             addInterrupt(REG_TIME5);
         break;
     case 15: // Every 10ms (7.5ms out of phase)
-        i = mem.incTimer(REG_TIME4);
-        if( i )
+        if( mem.incTimer(REG_TIME4) )
             addInterrupt(REG_TIME4);
         break;
     }
     // Every 0.5ms (~1/1600s)
     if( bTime6Enabled ) {
-        i = mem.incTimer(REG_TIME6);
-        if( i ) {
+        if( mem.incTimer(REG_TIME6) ) {
             addInterrupt(REG_TIME6);
             bTime6Enabled = false;
         }
@@ -271,10 +269,8 @@ void CCpu::incTime(void) {
 
 void CCpu::incTIME1(void)
 {
-    uint16_t t1 = mem.incTimer(REG_TIME1);
-    if( t1 ) {
+    if( mem.incTimer(REG_TIME1) )
         mem.incTimer(REG_TIME2);
-    }
 }
 
 
