@@ -91,4 +91,16 @@ void CCpu::updateDSKY(WINDOW *win, bool bRun)
     mvwprintw(win, y++, COL_4, "%5.5s", dsp.x1);
     mvwprintw(win, y++, COL_4, "%5.5s", dsp.x2);
     mvwprintw(win, y++, COL_4, "%5.5s", dsp.x3);
+
+    y++;
+
+    mvwprintw(win, y++, COL_4, out[12] & BIT_1 ? "PRIO DISP" : "          ");
+    mvwprintw(win, y++, COL_4, out[12] & BIT_2 ? "NO DAP" : "          ");
+    mvwprintw(win, y++, COL_4, out[12] & BIT_3 ? "VEL" : "          ");
+    mvwprintw(win, y++, COL_4, out[12] & BIT_4 ? "NO ATT" : "          ");
+    mvwprintw(win, y++, COL_4, out[12] & BIT_5 ? "ALT" : "          ");
+    mvwprintw(win, y++, COL_4, out[12] & BIT_6 ? "GIMBAL LOCK" : "          ");
+    mvwprintw(win, y++, COL_4, out[12] & BIT_8 ? "TRACKER" : "          ");
+    mvwprintw(win, y++, COL_4, out[12] & BIT_9 ? "PROG" : "          ");
+
 }
