@@ -490,7 +490,10 @@ int main(int argc, char *argv[])
                 sscanf(buf, "%o", &pc);
                 cpu.setPC(pc);
             }
-
+            break;
+        case 'P':   // PRO-key
+            //   if (State->InputChannel[032] & 020000)
+            cpu.keyPress(DSKY_PRO);
         };
     } while(key != 'q');
 	endwin();			/* End curses mode		  */

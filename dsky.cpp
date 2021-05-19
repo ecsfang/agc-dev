@@ -104,3 +104,15 @@ void CCpu::updateDSKY(WINDOW *win, bool bRun)
     mvwprintw(win, y++, COL_4, out[12] & BIT_9 ? "PROG" : "          ");
 
 }
+
+void CCpu::keyPress(Key_e key)
+{
+    uint16_t    io;
+    switch(key) {
+        case DSKY_PRO:
+            io = mem.readIO(032);
+            mem.writeIO(032, io | 020000);
+            addInterrupt(iKEYRUPT1);
+            break;
+    }
+}

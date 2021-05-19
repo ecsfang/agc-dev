@@ -9,6 +9,24 @@ extern FILE *logFile;
 #define POS_OVF() (bOF && s2 == 0)
 #define NEG_OVF() (bOF && s2 != 0)
 
+typedef enum {
+    DSKY_0,
+    DSKY_1,
+    DSKY_PRO
+} Key_e;
+
+#define NR_INTS     11
+#define iBOOT       (1<<0)
+#define iT6RUPT     (1<<1)
+#define iT5RUPT     (1<<2)
+#define iT3RUPT     (1<<3)
+#define iT4RUPT     (1<<4)
+#define iKEYRUPT1   (1<<5)
+#define iKEYRUPT2   (1<<6)
+#define iUPRUPT     (1<<7)
+#define iDOWNRUPT   (1<<8)
+#define iRADARRUPT  (1<<9)
+#define iRUPT10     (1<<10)
 
 class CCpu {
     CMemory mem;
@@ -314,6 +332,7 @@ public:
             *LsbSP |= S1_MASK;
         LsbSP[-1] = OverflowCorrected(MASK_16_BITS & (Decent >> 14)); // Was 13.
     }
+    void showInterrupt(void);
     void addInterrupt(int i);
     uint16_t handleInterrupt(void);
     void incTime(void);
@@ -330,7 +349,8 @@ public:
     }
     int BurstOutput (int DriveBitMask, int CounterRegister, int Channel);
     void UpdateIMU(void);
-
+    void keyPress(Key_e key);
 };
+
 
 #endif//__CPU_H__

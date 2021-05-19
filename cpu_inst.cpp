@@ -194,19 +194,6 @@ int CCpu::sst(void)
     return ret;
 }
 
-#define NR_INTS     11
-#define iBOOT       (1<<0)
-#define iT6RUPT     (1<<1)
-#define iT5RUPT     (1<<2)
-#define iT3RUPT     (1<<3)
-#define iT4RUPT     (1<<4)
-#define iKEYRUPT1   (1<<5)
-#define iKEYRUPT2   (1<<6)
-#define iUPRUPT     (1<<7)
-#define iDOWNRUPT   (1<<8)
-#define iRADARRUPT  (1<<9)
-#define iRUPT10     (1<<10)
-
 #define BOOT        04000   // Power-up or GOJ signal.
 
 uint16_t CCpu::handleInterrupt(void)
@@ -230,15 +217,36 @@ uint16_t CCpu::handleInterrupt(void)
     return 0;
 }
 
+#define IPRT(i,s)                           \
+     if( gInterrupt & i ) {                 \
+        if( n++ ) fprintf(logFile, " | ");  \
+        fprintf(logFile, "%s", s);          \
+    }
+
+void CCpu::showInterrupt(void)
+{
+    if( !gInterrupt )
+        return;
+    int n = 0;
+    fprintf(logFile, "INTERRUPT: ");
+    IPRT( iBOOT,      "BOOT")
+    IPRT( iT6RUPT,    "T6RUPT")
+    IPRT( iT5RUPT,    "T5RUPT")
+    IPRT( iT3RUPT,    "T3RUPT")
+    IPRT( iT4RUPT,    "T4RUPT")
+    IPRT( iKEYRUPT1,  "KEYRUPT1")
+    IPRT( iKEYRUPT2,  "KEYRUPT2")
+    IPRT( iUPRUPT,    "UPRUPT")
+    IPRT( iDOWNRUPT,  "DOWNRUPT")
+    IPRT( iRADARRUPT, "RADARRUPT")
+    IPRT( iRUPT10,    "RUPT10")
+    fprintf(logFile, "\n");
+}
+
 void CCpu::addInterrupt(int i)
 {
-    fprintf(logFile, "INTERRUPT %04o\n",i);
-    switch(i) {
-    case REG_TIME3: gInterrupt |= iT3RUPT; break;
-    case REG_TIME4: gInterrupt |= iT4RUPT; break;
-    case REG_TIME5: gInterrupt |= iT5RUPT; break;
-    case REG_TIME6: gInterrupt |= iT6RUPT; break;
-    }
+    gInterrupt |= i;
+    showInterrupt();
 }
 
 void CCpu::incTime(void) {
@@ -249,21 +257,21 @@ void CCpu::incTime(void) {
     case 0: // Every 10 ms
         incTIME1(); // Increment every 10ms
         if( mem.incTimer(REG_TIME3) )
-            addInterrupt(REG_TIME3);
+            addInterrupt(iT3RUPT);
         break;
     case 10: // Every 10m (5ms out of phase)
         if( mem.incTimer(REG_TIME5) )
-            addInterrupt(REG_TIME5);
+            addInterrupt(iT5RUPT);
         break;
     case 15: // Every 10ms (7.5ms out of phase)
         if( mem.incTimer(REG_TIME4) )
-            addInterrupt(REG_TIME4);
+            addInterrupt(iT4RUPT);
         break;
     }
     // Every 0.5ms (~1/1600s)
     if( bTime6Enabled ) {
         if( mem.incTimer(REG_TIME6) ) {
-            addInterrupt(REG_TIME6);
+            addInterrupt(iT6RUPT);
             bTime6Enabled = false;
         }
     }

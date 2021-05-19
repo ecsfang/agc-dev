@@ -98,6 +98,16 @@
                             // Selectable from three possible sources:
                             // Trap 31A, Trap 31B, and Trap 32.
 
+/**
+#  ENGINE ON BIT 13 OF CHANNEL 11
+#  0 MEANS OFF
+#  1 MEANS ON
+
+#  BIT10 OF CHANNEL 30 IS PNGCS CONTROL OF S/C
+
+#  BIT13 OF CHANNEL 31 ATTITUDE HOLD BIT. INVERTED.
+*/
+
 extern FILE    *logFile;
 
 enum {
@@ -378,6 +388,20 @@ public:
                 outIoMem[(data>>11) & 017] = data;
                 bDSky = true;
                 break;
+            case 013:
+                // Enable the appropriate traps for HANDRUPT. Note that the trap
+                // settings cannot be read back out, so after setting the traps the
+                // enable bits are masked out.
+#if 0
+                if (data & 004000)
+                    State->Trap31A = 1;
+                if (data & 010000)
+                    State->Trap31B = 1;
+                if (data & 020000)
+                    State->Trap32 = 1;
+#endif
+                data &= 043777;
+                break;    
             case 015:
             case 016:
                 if( data == 022 ) {
