@@ -111,7 +111,7 @@ void CCpu::keyPress(Key_e key)
     switch(key) {
         case DSKY_PRO:
             io = mem.readIO(032);
-            mem.writeIO(032, io | 020000);
+            mem.writeIO(032, io & ~BIT_15);
             addInterrupt(iKEYRUPT1);
             break;
     }
