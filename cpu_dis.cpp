@@ -16,6 +16,7 @@ Reg_t   regs[] = {
     { "Q",  002, MASK_15_BITS },
     { "EB", 003, MASK_15_BITS },
     { "FB", 004, MASK_15_BITS },
+    { "FEB", 077, MASK_15_BITS },
     { "Z",  005, MASK_12_BITS },
     { "BB", 006, MASK_15_BITS },
     { NULL, 000, MASK_15_BITS },
@@ -77,7 +78,9 @@ void CCpu::dispReg(WINDOW *win)
     for( y=0; y<(sizeof(regs)/sizeof(Reg_t)); y++ ) {
         r = mem.read12(regs[y].addr);
         if( regs[y].name) {
-            if( regs[y].addr < REG_EB ) {
+            if( regs[y].addr == 077 ) {
+                mvwprintw(win, y, 0, "%3s:    [%c] ", regs[y].name, mem.getFEB() ? 'X' : ' ');
+            } else if( regs[y].addr < REG_EB ) {
                 mvwprintw(win, y, 0, "%3s: %d%d:%05o ", regs[y].name, r&S2_MASK ? 1 : 0, r & S1_MASK ? 1 : 0, r & regs[y].mask);
             } else
                 mvwprintw(win, y, 0, "%3s:    %05o ", regs[y].name, r & regs[y].mask);
@@ -130,8 +133,8 @@ void CCpu::dispReg(WINDOW *win)
     mvwprintw(win, y++, 0, "[MEM12(k)] %04o [%05o] -> %05o", k12,  mem.addr2mem(k12), mem.read12(k12) & MASK_15_BITS );
 
     if( idx > 0 ) {
-        mvwprintw(win, y++, 0, " IDX [%04o] -> [%05o] -> %05o", idx,  mem.addr2mem(k10+idx), mem.read12(k10+idx) );
-        mvwprintw(win, y++, 0, " IDX [%04o] -> [%05o] -> %05o", idx,  mem.addr2mem(k12+idx), mem.read12(k12+idx) );
+        mvwprintw(win, y++, 0, " IDX [%04o] -> [%05o] -> %05o", idx,  mem.addr2mem(AddSP16(k10,idx)), mem.read12(AddSP16(k10,idx)) );
+        mvwprintw(win, y++, 0, " IDX [%04o] -> [%05o] -> %05o", idx,  mem.addr2mem(AddSP16(k12,idx)), mem.read12(AddSP16(k12,idx)) );
     }
     mvwprintw(win, y1++, COL_3, "TIME1:2 [%05o:%05o]", mem.read12(REG_TIME2), mem.read12(REG_TIME1));
     mvwprintw(win, y1++, COL_3, "TIME3   [%05o]", mem.read12(REG_TIME3));
@@ -397,6 +400,7 @@ char *CCpu::disasm(int offs, bool bUpdate)
     uint16_t zpc = mem.getZ()+offs;
     uint16_t pc = mem.getPysZ()+offs;
     uint8_t blk = (pc - 010000) / FIXED_BLK_SIZE;
+
     if( bUpdate )
         getOP(false, offs);
     bool bEx = bExtracode;

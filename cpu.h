@@ -10,9 +10,25 @@ extern FILE *logFile;
 #define NEG_OVF() (bOF && s2 != 0)
 
 typedef enum {
-    DSKY_0,
-    DSKY_1,
-    DSKY_PRO
+    DSKY_0          = 16,
+    DSKY_1          = 1,
+    DSKY_2          = 2,
+    DSKY_3          = 3,
+    DSKY_4          = 4,
+    DSKY_5          = 5,
+    DSKY_6          = 6,
+    DSKY_7          = 7,
+    DSKY_8          = 8,
+    DSKY_9          = 9,
+    DSKY_VERB       = 17,
+    DSKY_RSET       = 18,
+    DSKY_KEY_REL    = 25,
+    DSKY_PLUS       = 26,
+    DSKY_MINUS      = 27,
+    DSKY_ENTR       = 28,
+    DSKY_CLR        = 30,
+    DSKY_NOUN       = 31,
+    DSKY_PRO        = 128
 } Key_e;
 
 #define NR_INTS     11
@@ -89,7 +105,7 @@ public:
     __uint16_t getOP(bool bUpdate=true, int offs=0) {
         opc = mem.getOP(offs) & MASK_15_BITS;
         if( bUpdate )
-            opc += idx;
+            opc  = AddSP16(opc, idx); //+= idx;
         k12 = opc & MASK_12B_ADDRESS;
         k10 = opc & MASK_10B_ADDRESS;
         qc = (opc & QC_MASK) >> 10;

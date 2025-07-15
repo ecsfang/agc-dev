@@ -16,6 +16,11 @@ void CCpu::readCore(char *core)
 //            addr = 010000 + bank * FIXED_BLK_SIZE;
             addr = 02000;
             fprintf(logFile, "BANK=%o [%06o]\n", bank, addr);
+            if( bank >= 040 ) {
+                bank -= 010;
+                mem.setFEB(1);
+            } else
+                mem.setFEB(0);
             mem.setFB(bank << FB_SHIFT);
         }
         if( buf[0] >= '0' && buf[0] < '8') {
@@ -41,6 +46,7 @@ void CCpu::readCore(char *core)
     mem.write12(01510, 0777); // FAILSW # IF POSITIVE NO RCSMONIT, OTHERWISE 0
     mem.setEB(0);
     mem.setFB(0); //020 * FIXED_BLK_SIZE);
+    mem.setFEB(0);
     mem.setZ(BOOT); //02070);
 #endif
     fprintf(logFile, "Start: [%06o](%06o) : %05o\n", mem.getZ(), mem.addr2mem(mem.getZ()), mem.getOP());

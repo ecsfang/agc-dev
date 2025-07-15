@@ -336,16 +336,18 @@ void readSymbols(char *sym)
         idx += 15;
         fseek(fs, idx, SEEK_SET);
         fread(&addr, 2, 1, fs);
-//        printf("%04X ", addr);
+        // printf("%04X ", addr);
         if( addr < 04000 ) {
         } else {
             symTab[addr] = strdup(buf);
-/*            if( addr >= 04000 && addr < 010000 )
+#if 0
+            if( addr >= 04000 && addr < 010000 )
                 printf("%s:    %05o\n", buf, addr);
             else {
                 uint8_t blk = (addr - 010000) / FIXED_BLK_SIZE;
                 printf("%s: %02o %05o\n", buf, blk, (addr % FIXED_BLK_SIZE) + FIXED_BLK_SIZE);
-            }*/
+            }
+#endif
         }
         idx += 292-15;
         fseek(fs, idx, SEEK_SET);
@@ -393,6 +395,7 @@ int main(int argc, char *argv[])
     fprintf(logFile,"Starting!\n");
 
     if( argc == 3 ) {
+        fprintf(logFile,"Read symbols ...\n");
         readSymbols(argv[argc-1]);
 //        return -1;
 //        sscanf(argv[argc-1], "%o", &n);
@@ -494,6 +497,26 @@ int main(int argc, char *argv[])
         case 'P':   // PRO-key
             //   if (State->InputChannel[032] & 020000)
             cpu.keyPress(DSKY_PRO);
+            break;
+        case 'V':   // VERB-key
+            cpu.keyPress(DSKY_VERB);
+            break;
+        case 'N':   // NOUN-key
+            cpu.keyPress(DSKY_NOUN);
+            break;
+        case 'E':   // ENTR-key
+            cpu.keyPress(DSKY_ENTR);
+            break;
+        case '0': cpu.keyPress(DSKY_0); break;
+        case '1': cpu.keyPress(DSKY_1); break;
+        case '2': cpu.keyPress(DSKY_2); break;
+        case '3': cpu.keyPress(DSKY_3); break;
+        case '4': cpu.keyPress(DSKY_4); break;
+        case '5': cpu.keyPress(DSKY_5); break;
+        case '6': cpu.keyPress(DSKY_6); break;
+        case '7': cpu.keyPress(DSKY_7); break;
+        case '8': cpu.keyPress(DSKY_8); break;
+        case '9': cpu.keyPress(DSKY_9); break;
         };
     } while(key != 'q');
 	endwin();			/* End curses mode		  */

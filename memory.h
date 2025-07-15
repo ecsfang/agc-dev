@@ -315,6 +315,12 @@ public:
         mem.EB = (mem.BB & 07) << EB_SHIFT;
         mem.FB = mem.BB & FB_MASK;
     }
+    void setFEB(__uint8_t feb) {
+        FEB = feb;
+    }
+    __uint8_t getFEB(void) {
+        return FEB;
+    }
     // Write data to a logical address
     void write12(__uint16_t addr, __uint16_t data) {
         __uint16_t _addr = addr2mem(addr);
@@ -367,6 +373,16 @@ public:
         }
     }
 
+// AAA ABC CCC CDD DDD
+#define IO_A_MASK 074000
+#define IO_B_MASK 002000
+#define IO_C_MASK 001740
+#define IO_D_MASK 000037
+#define IO_A_SHIFT 11
+#define IO_B_SHIFT 10
+#define IO_C_SHIFT 5
+#define IO_D_SHIFT 0
+
     void writeIO(__uint16_t addr, __uint16_t data)
     {
         // The value should be in AGC format. 
@@ -382,10 +398,17 @@ public:
             break;
         default:
             switch(addr) {
+            case 007:
+                setFEB( data & BIT_7 ? 1 : 0);
+                break;
             case 010:
                 // Channel 10 is converted externally to the CPU into up to 16 ports,
                 // by means of latching relays.  We need to capture this data.
                 outIoMem[(data>>11) & 017] = data;
+                fprintf(logFile,"DSKY >> A:%2d ", (data & IO_A_MASK) >> IO_A_SHIFT);
+                fprintf(logFile,"B:%d ",  (data & IO_B_MASK) >> IO_B_SHIFT);
+                fprintf(logFile,"C:%2d ", (data & IO_C_MASK) >> IO_C_SHIFT);
+                fprintf(logFile,"D:%2d\n", (data & IO_D_MASK) >> IO_D_SHIFT);
                 bDSky = true;
                 break;
             case 013:
@@ -478,7 +501,7 @@ public:
     // Map 12 bit address to physical address
     __uint16_t  addr2mem(__uint16_t addr) {
         __uint16_t  _addr;
-        __uint8_t   sub = 0;
+//        __uint8_t   FEB = 0;
         if( (addr & (BIT_11|BIT_12)) == 00 ) {
             if( (addr & (BIT_9|BIT_10)) == (BIT_9|BIT_10) ) {
                 // Erasable-switched memory ...
@@ -491,8 +514,8 @@ public:
         if( (addr & BIT_12) == 0 ) {
             // Fixed-switched memory
             _addr = (addr & MASK_10_BITS) | (mem.FB & FB_MASK);
-            if( sub && (_addr & (BIT_14|BIT_15)) == (BIT_14|BIT_15) ) {
-                return (_addr | BIT_16) + FB_MEM_START;
+            if( FEB && (_addr & (BIT_14|BIT_15)) == (BIT_14|BIT_15) ) {
+                return (_addr /*| BIT_16*/) + FB_MEM_START;
             } else {
                 return _addr + FB_MEM_START;
             }
