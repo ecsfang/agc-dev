@@ -175,14 +175,9 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
         break;
     case 02:    // INCR
         mem.inc(k10);
-        //x1 = mem.read12(k10);
-        //mem.write12(k10,x1+1);
         ret = 0;
         break;
     case 03: // ADS
-        //a = mem.getA();
-        //x1 = mem.read12(k10);
-        //a = AddSP16(a,x1);add1st
         if( k10 < REG_EB ) {
             a = AddSP16(mem.getA(), mem.read12(k10));
             mem.write12(k10, a);
@@ -217,13 +212,13 @@ int CCpu::op3(void)
 
 int CCpu::op4(void)
 {
-    // The "Clear and Add" (or "Clear and Add Erasable" or "Clear and Add Fixed") instruction moves
-    // the contents of a memory location into the accumulator.
+    // CS COM
+    // The "Clear and Subtract" instruction moves the 1's-complement
+    // (i.e., the negative) of a memory location into the accumulator..
     uint16_t k = k12 < REG_EB ? mem.read12(k12) : SignExtend(mem.read12(k12));
     setA(~k);
     if( IS_EDIT_REG(k12) )
         mem.update(k12); // Update (k)!
-    // if( k12 > REG_Q )
     if( k12 != REG_A && k12 != REG_Q )
         bOF = false;
     return 0;
@@ -330,7 +325,10 @@ int CCpu::op5(void)
         } else {
             // INDEX
             idx = mem.read12(k10);
-            mem.write12(k10,idx);
+            // A side-effect of this instruction is that K is rewritten after its value is interrogated;
+            // this means that if K is CYR, SR, CYL, or EDOP, then it is re-edited.
+            if( IS_EDIT_REG(k12) )
+                mem.write12(k10,idx);
         }
         ret = 0;
         break;
@@ -345,11 +343,9 @@ int CCpu::op6(void)
 {
     int ret = -1;
     __uint16_t m = mem.read12(k12);
-    __uint16_t a = mem.getA();
     
     // AD - add and update overflow
-//    mem.write(0, add1st(SignExtend(a), SignExtend(m)));
-    mem.setA(AddSP16(a, k12 < REG_EB ? m : SignExtend(m)));
+    mem.setA(AddSP16(mem.getA(), k12 < REG_EB ? m : SignExtend(m)));
     
     if( IS_EDIT_REG(k12) )
         mem.update(k12); // Update (K)!

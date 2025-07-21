@@ -120,7 +120,9 @@ int CCpu::sst(void)
     __uint16_t op = getOP();
     bClrExtra = true;
 
-    ln = sprintf(logBuf, "[%c%5d]%s", bIntRunning ? '*':' ', clockCnt, disasm(0,false));
+    static uint32_t clk;
+
+    ln = sprintf(logBuf, "[%c%5d]%s", bIntRunning ? '*':' ', clk++, disasm(0,false));
 
     UpdateIMU();
 
@@ -164,7 +166,7 @@ int CCpu::sst(void)
     dTime += mct;
 
     __uint16_t r = mem.getA();
-    int nl = 50-ln;
+    int nl = 55-ln;
     if (nl < 1) nl = 1;
     ln += sprintf(logBuf+ln,"%*.*s[%d:%05o] ", nl,nl,"A",r & 0100000 ? 1 : 0, r & MASK_15_BITS);
     r = mem.getL();
@@ -174,9 +176,11 @@ int CCpu::sst(void)
     r = mem.getBB();
     ln += sprintf(logBuf+ln,"BB[%05o] ", r & MASK_15_BITS);
     ln += sprintf(logBuf+ln,"IDX[%05o] ", idx);
+#if 0
     ln += sprintf(logBuf+ln,"IZ[%05o] ", mem.read12(REG_ZRUPT));
     ln += sprintf(logBuf+ln,"IB[%05o] ", mem.read12(REG_BRUPT));
     ln += sprintf(logBuf+ln,"IBB[%05o] ", mem.read12(REG_BBRUPT));
+#endif
     fprintf(logFile,"%s\n", logBuf);
 
     if( dTime > 43 ) { // 0.5ms/11.7us
@@ -187,9 +191,7 @@ int CCpu::sst(void)
 
     mem.setZ(nextPC);
     if( bInterrupt && !bIntRunning && !bExtracode && !idx && !OF() && gInterrupt != 0 ) {
-//        uint16_t    iPC = 0;
         nextPC = handleInterrupt();
-        //nextPC = iPC ? iPC : nextPC; 
     }
     if( nextPC )
         mem.setZ(nextPC);
@@ -209,14 +211,16 @@ uint16_t CCpu::handleInterrupt(void)
     mem.write12(REG_ZRUPT, pc);
     mem.write12(REG_BRUPT, mem.getOP());
     for(int i=0; i<NR_INTS;i++) {
+        // Is interrupt flag set ?
         if( gInterrupt & (1<<i) ) {
             uint16_t iPc = BOOT + i*4;
             nextPC = iPc;
-            gInterrupt &= ~(1<<i);
             fprintf(logFile,"Stop and continue @ %05o\n", nextPC);
             bIntRunning = true;
             intRunning = iPc;
             //stopAgc();
+            // Clear the interrupt flag ...
+            gInterrupt &= ~(1<<i);
             return nextPC;
         }
     }
@@ -234,7 +238,7 @@ void CCpu::showInterrupt(void)
     if( !gInterrupt )
         return;
     int n = 0;
-    fprintf(logFile, "INTERRUPT: ");
+    fprintf(logFile, "INTERRUPT (%o): ", gInterrupt);
     IPRT( iBOOT,      "BOOT")
     IPRT( iT6RUPT,    "T6RUPT")
     IPRT( iT5RUPT,    "T5RUPT")
@@ -258,6 +262,7 @@ void CCpu::addInterrupt(int i)
 void CCpu::incTime(void) {
     // Count all 0.5ms
     static uint32_t ms05 = 0;
+    static uint8_t downrupt = 0;
 
     switch( ms05 % 20 ) {
     case 0: // Every 10 ms
@@ -274,6 +279,11 @@ void CCpu::incTime(void) {
             addInterrupt(iT4RUPT);
         break;
     }
+    if( downrupt > 42 ) {
+        fprintf(logFile,"ADD DOWNRUPT!\n");
+        addInterrupt(iDOWNRUPT);
+        downrupt = 0;
+    }
     // Every 0.5ms (~1/1600s)
     if( bTime6Enabled ) {
         if( mem.incTimer(REG_TIME6) ) {
@@ -282,6 +292,7 @@ void CCpu::incTime(void) {
         }
     }
     ms05++;
+    downrupt++;
 }
 
 void CCpu::incTIME1(void)

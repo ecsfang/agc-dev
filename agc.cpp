@@ -9,6 +9,7 @@ using namespace std;
 
 FILE    *logFile=NULL;
 
+extern int dskyInit(void);
 
 //#define DO_TEST
 #ifdef DO_TEST
@@ -241,38 +242,45 @@ void test1st(void)
 }
 #endif
 
-void memTest(CMemory *mem, uint16_t a0, uint16_t a1, uint8_t eb, uint8_t fb, uint8_t ext)
+void memTest(CMemory *mem, uint16_t a0, uint16_t a1, uint8_t eb, uint8_t fb, uint8_t feb)
 {
     uint16_t    addr0, addr1;
     mem->setEB(eb<<EB_SHIFT);
     mem->setFB(fb<<FB_SHIFT);
+    mem->setFEB(feb);
     addr0 = mem->addr2mem(a0);
     addr1 = mem->addr2mem(a1);
 
-    printf("%05o-%05o\t%02o\t%02o\t%o\t%04o-%04o\n", addr0, addr1, eb, fb, ext, a0, a1);
+    printf("%05o-%05o\t%02o\t%02o\t%o\t%04o-%04o\n", addr0, addr1, eb, fb, feb, a0, a1);
 }
 void doMemTest(CMemory *mem)
 {
     printf("Memory test!\n");
-    for(uint8_t e=0; e<8; e++) {
-        memTest(mem, 00000, 01377, e, 0, 0);
-    }
-    printf("\n");
-    for(uint8_t e=0; e<8; e++) {
-        memTest(mem, 01400, 01777, e, 0, 0);
-    }
-    printf("\n");
-    for(uint8_t e=0; e<8; e++) {
-        memTest(mem, 04000, 07777, e, 0, 0);
-    }
-    printf("\n");
-    for(uint8_t e=0; e<8; e++) {
-        memTest(mem, 02000, 03777, e, 0, 0);
-    }
-    printf("\n");
-    for(uint8_t f=0; f<040; f++) {
-        memTest(mem, 02000, 03777, 0, f, 0);
-    }
+        printf("Erasable fixed\n");
+        printf("Pseudo address\tEBANK\tFBANK\tFEB\tS-Reg value\n");
+        for(uint8_t e=0; e<8; e++) {
+            memTest(mem, 00000, 01377, e, 0, 0);
+        }
+        printf("\nErasable switched\n");
+        printf("Pseudo address\tEBANK\tFBANK\tFEB\tS-Reg value\n");
+        for(uint8_t e=0; e<8; e++) {
+            memTest(mem, 01400, 01777, e, 0, 0);
+        }
+        printf("\nFixed un-switched\n");
+        printf("Pseudo address\tEBANK\tFBANK\tFEB\tS-Reg value\n");
+        for(uint8_t e=0; e<8; e++) {
+            memTest(mem, 04000, 07777, e, 0, 0);
+        }
+        printf("\nFixed switched-switched (superbank 0)\n");
+        printf("Pseudo address\tEBANK\tFBANK\tFEB\tS-Reg value\n");
+        for(uint8_t f=0; f<040; f++) {
+            memTest(mem, 02000, 03777, 0, f, 0);
+        }
+        printf("\nFixed switched-switched (superbank 1)\n");
+        printf("Pseudo address\tEBANK\tFBANK\tFEB\tS-Reg value\n");
+        for(uint8_t f=0; f<034; f++) {
+            memTest(mem, 02000, 03777, 0, f, 1);
+        }
 }
 
 typedef struct {
@@ -318,6 +326,7 @@ void updateScreen(WINDOW *wnd, CCpu *cpu, bool bRun)
         for(int n=0; n<5; n++)
             mvwprintw(wnd,18+n,0,"%s           ", cpu->disasm(n-1));
     }
+    mvwprintw(wnd,24,0,"Clk: %5d\n", cpu->getClock());
     map<uint16_t, char*>::iterator it;
     it = symTab.find(cpu->getAbsPC());
     if( it != symTab.end() )
@@ -412,6 +421,8 @@ int main(int argc, char *argv[])
         bRunning = true;
         nodelay(myWindow, true);
     }
+
+    dskyInit();
 
     do {
         if( brAddr == cpu.getPC() && key !=  'R' ) {

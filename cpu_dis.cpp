@@ -400,26 +400,30 @@ char *CCpu::disasm(int offs, bool bUpdate)
     uint16_t zpc = mem.getZ()+offs;
     uint16_t pc = mem.getPysZ()+offs;
     uint8_t blk = (pc - 010000) / FIXED_BLK_SIZE;
-
+    uint16_t _opc = opc & 077777;
     if( bUpdate )
         getOP(false, offs);
+
     bool bEx = bExtracode;
 
-    if( mem.read12(zpc-1) == 00006 )
-        bEx = true;
+    // Was previous instruction "EXTEND" ... ?
+    // Problematic if we jump to an intruction that
+    // is preceeded by EXTEND ...
+//    if( mem.read12(zpc-1) == 00006 )
+//        bEx = true;
 
     char ex = bEx ? '#':'>';
 
     if( offs )
-        pDis += sprintf(disBuf+pDis, "          %05o   ", opc);
+        pDis += sprintf(disBuf+pDis, "          %05o   ", _opc);
     else {
         if( pc < 04000 ) {
             // Erasable memory
             blk = pc / 0400;
-            if( zpc >= 0 && zpc <= 01400 )
-                pDis += sprintf(disBuf+pDis, "[   %04o] %05o %c ", zpc, opc, ex);
+            if( zpc >= 0 && zpc < 01400 )
+                pDis += sprintf(disBuf+pDis, "{   %04o} %05o %c ", zpc, _opc, ex);
             else
-                pDis += sprintf(disBuf+pDis, "[E%o %04o] %05o %c ", blk, zpc, opc, ex);
+                pDis += sprintf(disBuf+pDis, "{E%o %04o} %05o %c ", blk, zpc, _opc, ex);
         } else {
             // Fixed memory
             if( pc >= 010000 && pc <012000 )
@@ -431,9 +435,9 @@ char *CCpu::disasm(int offs, bool bUpdate)
             else if( pc >= 006000 && pc <010000 )
                 blk = 3;
             if( zpc >= 04000 && zpc < 10000 )
-                pDis += sprintf(disBuf+pDis, "[   %04o] %05o %c ", zpc, opc, ex);
+                pDis += sprintf(disBuf+pDis, "[   %04o] %05o %c ", zpc, _opc, ex);
             else
-                pDis += sprintf(disBuf+pDis, "[%02o,%04o] %05o %c ", blk, zpc, opc, ex);
+                pDis += sprintf(disBuf+pDis, "[%02o,%04o] %05o %c ", blk, zpc, _opc, ex);
         }
     }
     if( bEx ) {

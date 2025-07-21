@@ -3,6 +3,9 @@
 
 #include <memory.h>
 #include <cstring>
+#include <assert.h>
+
+extern void send2dsky(__uint16_t addr, __uint16_t data);
 
 #define ERASABLE_BLK_SIZE   0400
 #define FIXED_BLK_SIZE      02000
@@ -45,16 +48,23 @@
 #define BIT_14              (1<<13)
 #define BIT_15              (1<<14)
 #define BIT_16              (1<<15)
+#define BIT_17              (1<<16)
 
 #define S1_MASK             BIT_15
 #define S2_MASK             BIT_16
-#define OVF_MASK            (1<<16)
+#define OVF_MASK            BIT_17
 #define MANTISSA_MASK       (MASK_15_BITS>>1)
 
 #define IS_POS(x) (((x)&S1_MASK) == 0)
 #define IS_NEG(x) (((x)&S1_MASK) != 0)
 
-#define TOTAL_SIZE  (8 * ERASABLE_BLK_SIZE + 38 * FIXED_BLK_SIZE)
+#define ERASABLE_SIZE   (010 * ERASABLE_BLK_SIZE)
+#define FIXED_SIZE      (042 * FIXED_BLK_SIZE)
+#define SUPER_SIZE      (004 * FIXED_BLK_SIZE)
+
+//#define TOTAL_SIZE  (8 * ERASABLE_BLK_SIZE + 38 * FIXED_BLK_SIZE)
+#define TOTAL_SIZE  (ERASABLE_SIZE + FIXED_SIZE + SUPER_SIZE)
+
 #define IO_SIZE     8
 
 #define OUT_IO_SIZE 00020
@@ -67,6 +77,8 @@
 #define FB_SHIFT        10
 
 #define BB_MASK     076007 // FFF FF0 000 000 EEE
+
+#define SUPERBNK_MASK 000160
 
 #define CYR_REG      0020
 #define SR_REG       0021
@@ -180,7 +192,7 @@ typedef union {
         __uint16_t  ZRUPT;      // 15
         __uint16_t  BBRUPT;     // 16
         __uint16_t  BRUPT;      // 17
-        __uint16_t  SYR;        // 20
+        __uint16_t  CYR;        // 20
         __uint16_t  SR;         // 21
         __uint16_t  CYL;        // 22
         __uint16_t  EDOP;       // 23
@@ -277,6 +289,9 @@ public:
     __uint16_t getBB(void) {
         return mem.BB;
     }
+    __uint16_t getFB(void) {
+        return mem.FB;
+    }
     __uint16_t getT1(void) {
         return mem.TIME1;
     }
@@ -303,16 +318,17 @@ public:
         return ++mem.Z;
     }
     void setEB(__uint16_t eb) {
-        mem.EB = eb;
+        mem.EB = eb & EB_MASK;
         mem.BB = mem.FB | (mem.EB >> EB_SHIFT);
     }
     void setFB(__uint16_t fb) {
-        mem.FB = fb;
+        mem.FB = fb & FB_MASK;
         mem.BB = mem.FB | (mem.EB >> EB_SHIFT);
     }
     void setBB(__uint16_t bb) {
-        mem.BB = bb;
-        mem.EB = (mem.BB & 07) << EB_SHIFT;
+        // Clear all unused bts ...
+        mem.BB = bb & (FB_MASK | (EB_MASK >> EB_SHIFT));
+        mem.EB = (mem.BB << EB_SHIFT) & EB_MASK;
         mem.FB = mem.BB & FB_MASK;
     }
     void setFEB(__uint8_t feb) {
@@ -324,6 +340,8 @@ public:
     // Write data to a logical address
     void write12(__uint16_t addr, __uint16_t data) {
         __uint16_t _addr = addr2mem(addr);
+//        if( _addr < 04000 )
+//            fprintf(logFile,"#### WR RAM [%04o] = %05o\n", _addr, data);
         if( _addr != ERR_ADDR )
             writePys(_addr, data);
     }
@@ -335,27 +353,39 @@ public:
                 case 00003: setEB(data); break;
                 case 00004: setFB(data); break;
                 case 00006: setBB(data); break;
+                case 00007: mem.word[addr] = 0; break;
                 default:
                     if( addr >= 04000 && addr < 010000 )
-                        addr += 010000;
+                        addr += FB_MEM_START;
 //                    if( addr == REG_Z )
 //                        fprintf(logFile, "UPDATING Z-REG!! mem[%05o] = %05o\n", addr, data);
-                    switch(addr) {
+                    if( IS_EDIT_REG(addr) ) {
+//                        fprintf(logFile,">>>> UPDATE [%o] %05o -> ", addr, data);
+
+                        switch(addr) {
                         case CYR_REG:
-                            data = (((data & 0x7FFF) >> 1 ) | (data << 14) ) & 0x7FFF;
+                            // abc def ghi jkl mno -> oab cde fgh ijk lmn
+                            data = (((data & 077777) >> 1) | ((data & BIT_1) << 14));
                             break;
                         case SR_REG:
-                            data = ((data & 0x4000) | (data >> 1)) & 0x7FFF;
+                            // abc def ghi jkl mno -> aab cde fgh ijk lmn
+                            data = (((data & 077777) >> 1) | (data & BIT_15));
                             break;
                         case CYL_REG:
-                            data = (((data & 0x4000) >> 14 ) | (data << 1)) & 0x7FFF;
+                            // abc def ghi jkl mno -> bcd efg hij klm noa
+                            data = ((data << BIT_1) | ((data & BIT_15) >> 14 )) & 077777;
                             break;
                         case EDOP_REG:
-                            data = (data >> 8) & 0x7F;
+                            // abc def ghi jkl mno -> 000 000 00b cde fgh
+                            data = (data >> 7) & 000177;
                             break;
+                        }
+//                        fprintf(logFile,"%05o\n", data);
                     }
                     mem.word[addr] = data;
             }
+        } else {
+            fprintf(logFile,"#### WR:Bad memory address: %05o [%o]!!\n", addr, TOTAL_SIZE);
         }
     }
     __uint16_t readIO(__uint16_t addr)
@@ -368,6 +398,9 @@ public:
             case REG_Q:
                 return getQ();
 //            case 012: return BIT_4;
+//            case 013: BIT_4 --> Radar activity
+            case 0007: // SUPERBNK bit
+                return inIoMem[addr] & SUPERBNK_MASK;
             default:
                 return inIoMem[addr];
         }
@@ -400,17 +433,23 @@ public:
             switch(addr) {
             case 007:
                 setFEB( data & BIT_7 ? 1 : 0);
+                data &= SUPERBNK_MASK;
                 break;
             case 010:
                 // Channel 10 is converted externally to the CPU into up to 16 ports,
                 // by means of latching relays.  We need to capture this data.
-                outIoMem[(data>>11) & 017] = data;
+                outIoMem[(data & IO_A_MASK) >> IO_A_SHIFT] = data;
+                send2dsky(addr, data);
                 fprintf(logFile,"DSKY >> A:%2d ", (data & IO_A_MASK) >> IO_A_SHIFT);
                 fprintf(logFile,"B:%d ",  (data & IO_B_MASK) >> IO_B_SHIFT);
                 fprintf(logFile,"C:%2d ", (data & IO_C_MASK) >> IO_C_SHIFT);
                 fprintf(logFile,"D:%2d\n", (data & IO_D_MASK) >> IO_D_SHIFT);
                 bDSky = true;
                 break;
+            case 011:
+                // Channel 11 is converted externally to the CPU into up to 16 ports,
+                // by means of latching relays.  We need to capture this data.
+                send2dsky(addr, data);
             case 013:
                 // Enable the appropriate traps for HANDRUPT. Note that the trap
                 // settings cannot be read back out, so after setting the traps the
@@ -443,6 +482,7 @@ public:
         }
     }
 
+    // Update one of the four so-called "editing" register.
     void  update(__uint16_t addr) {
         write12(addr, read12(addr));
     }
@@ -454,7 +494,11 @@ public:
 #define SIGN_EXTEND(w) ((w & MASK_15_BITS) | ((w << 1) & S2_MASK))
     __uint16_t  readPys(__uint16_t addr) {
         if( addr >= 04000 && addr < 010000 )
-            addr += 010000;
+            addr += FB_MEM_START;
+        if( addr >= TOTAL_SIZE )
+            fprintf(logFile,"#### RD: Bad memory address: %05o!!\n", addr);
+        if( addr == 00007 ) // Reg ZERO
+            return 0;
         return addr < TOTAL_SIZE ? mem.word[addr] : 0;
     }
     __uint16_t  read12(__uint16_t addr) {
@@ -498,6 +542,7 @@ public:
         return _addr;
     }
 #else
+#if 0
     // Map 12 bit address to physical address
     __uint16_t  addr2mem(__uint16_t addr) {
         __uint16_t  _addr;
@@ -515,7 +560,7 @@ public:
             // Fixed-switched memory
             _addr = (addr & MASK_10_BITS) | (mem.FB & FB_MASK);
             if( FEB && (_addr & (BIT_14|BIT_15)) == (BIT_14|BIT_15) ) {
-                return (_addr /*| BIT_16*/) + FB_MEM_START;
+                return (_addr /*| BIT_16*/) + 2*FB_MEM_START;
             } else {
                 return _addr + FB_MEM_START;
             }
@@ -524,6 +569,52 @@ public:
             return addr & MASK_12_BITS;
         }
     }
+#else
+    // Map 12 bit address to physical address
+    __uint16_t  addr2mem(__uint16_t addr) {
+        switch( (addr & (BIT_12|BIT_11)) >> 10 ) {
+        case 0b00: // Erasable Storage (0000-3777)
+            if( (addr & (BIT_10|BIT_9)) == (BIT_10|BIT_9) ) {
+                // Switched erasable memory ...
+                // 0b0011 -> 1400-1777 [EBANK]
+                return (addr & MASK_8_BITS) | (mem.EB & EB_MASK);
+            } else {
+                // Fixed erasable memory ...
+                // 0b0000 -> 0000-0377
+                // 0b0001 -> 0400-0777
+                // 0b0010 -> 1000-1377
+                return addr & MASK_10_BITS;
+            }
+            // Never gets here ...
+            break;
+        case 0b10:
+        case 0b11:
+            // 111
+            // 210 987 654 321
+            // aaa aaa aaa aaa
+            // Un-switched fixed memory
+            // 0b10 -> 4000-5777
+            // 0b11 -> 6000-7777
+            return addr & MASK_12_BITS;
+        case 0b01:
+            // Switched Fixed memory ...
+            {
+                __uint16_t  _addr = (addr & MASK_10_BITS) | (mem.FB & FB_MASK);
+                //if( _addr >= 04000 && _addr <=07777 )
+                //    return _addr;
+                if( FEB && (_addr & (BIT_14|BIT_15)) == (BIT_14|BIT_15) ) {
+                    return _addr + 3*FB_MEM_START;
+                } else {
+                    return _addr + FB_MEM_START;
+                }
+            }
+            // Never gets here ...
+            break;
+        }
+        // Should never get here ...
+        return ERR_ADDR;
+    }
+#endif
 #endif
     void init(void);
 };

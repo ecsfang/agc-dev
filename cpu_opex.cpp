@@ -39,7 +39,7 @@ int CCpu::op0ex(void)
         {
             uint16_t xio = a & io;
             if( IS_L_OR_Q(kc) ) {
-                setA( xio);
+                setA(xio);
             } else {
                 xio = OverflowCorrected(a) & io;
                 setA(SignExtend(xio));
@@ -178,7 +178,6 @@ int CCpu::op1ex(void)
                     else
                         Operand16 = NEG_ZERO;
                 }
-
                 mem.setA(SignExtend(Operand16));
             }
             else if (AbsA == AbsK && AbsL == POS_ZERO)
@@ -222,7 +221,7 @@ int CCpu::op1ex(void)
                     mem.setL(SignExtend(cpu2agc(Remainder)));
             }
         }
-/*        {
+        /*        {
             // SWAP ... :P
             uint16_t a = mem.getA();
             uint16_t l = mem.getL();
@@ -433,6 +432,7 @@ int CCpu::op5ex(void)
     if( IS_EDIT_REG(k12) )
         mem.write12(k12,idx);
     ret = 0;
+    // The INDEX instruction is the only instruction which does not reset the extracode flag!
     bClrExtra = false;
     return ret;
 }
@@ -447,10 +447,11 @@ int CCpu::op6ex(void)
     case 00: // SU
         if (k10 == REG_A)
             mem.setA(SignExtend(NEG_ZERO));
-        else //if (k10 < REG_EB)
+        else {//if (k10 < REG_EB)
             mem.setA(AddSP16(mem.getA(), MASK_16_BITS & ~mem.read12(k10)));
-        if (IS_EDIT_REG(k10))
-            mem.update(k10); // Update (k)!
+            if (IS_EDIT_REG(k10))
+                mem.update(k10); // Update (k)!
+        }
         break;
     default: // BZMF
         a = mem.getA();

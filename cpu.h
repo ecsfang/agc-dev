@@ -86,6 +86,9 @@ public:
         gInterrupt = 0;
 //        mem.init();
     }
+    uint32_t    getClock(void) {
+        return clockCnt;
+    }
     // Set breakpoint in memory
     void setBrkp(uint16_t bp) {
         bps[bp] = true;
@@ -105,7 +108,7 @@ public:
     __uint16_t getOP(bool bUpdate=true, int offs=0) {
         opc = mem.getOP(offs) & MASK_15_BITS;
         if( bUpdate )
-            opc  = AddSP16(opc, idx); //+= idx;
+            opc  = AddSP16(SignExtend(opc), SignExtend(idx)); //+= idx;
         k12 = opc & MASK_12B_ADDRESS;
         k10 = opc & MASK_10B_ADDRESS;
         qc = (opc & QC_MASK) >> 10;
