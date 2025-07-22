@@ -110,10 +110,12 @@ int CCpu::op2(void)
         ret = 0;
 
         if (k10 == 000001) { // DDOUBL
-            fprintf(logFile,"DDOUBLE (a: %05o, l: %05o)\n", a, l);
             Lsw = AddSP16 (MASK_16_BITS & l, MASK_16_BITS & l);
             Msw = AddSP16 (a, a);
-            fprintf(logFile,"(msw: %05o, lsw: %05o)\n", Msw, Lsw);
+            if( bFileLogging ) {
+                fprintf(logFile,"DDOUBLE (a: %05o, l: %05o)\n", a, l);
+                fprintf(logFile,"(msw: %05o, lsw: %05o)\n", Msw, Lsw);
+            }
             if ((0140000 & Lsw) == 0040000)
                 Msw = AddSP16 (Msw, POS_ONE);
             else if ((0140000 & Lsw) == 0100000)
@@ -121,10 +123,12 @@ int CCpu::op2(void)
             Lsw = OverflowCorrected (Lsw);
             mem.setA( MASK_16_BITS & Msw );
             mem.setL( MASK_16_BITS & SignExtend (Lsw) );
-            fprintf(logFile,"l = %05o\n", SignExtend (Lsw));
+            if( bFileLogging )
+                fprintf(logFile,"l = %05o\n", SignExtend (Lsw));
             break;
 	    }
-        fprintf(logFile,"DAS (a: %05o, l: %05o) + (%05o, %05o) -> [%05o]\n", a, l, x1, x2, k10);
+        if( bFileLogging )
+            fprintf(logFile,"DAS (a: %05o, l: %05o) + (%05o, %05o) -> [%05o]\n", a, l, x1, x2, k10);
         if( k10 < REG_EB )
             Lsw = AddSP16(MASK_16_BITS & l, MASK_16_BITS & x2);
         else
@@ -134,7 +138,8 @@ int CCpu::op2(void)
         else
             Msw = AddSP16(a, SignExtend(x1));
 
-        fprintf(logFile,"(a+x1): %05o, (l+x2): %05o)\n", Msw, Lsw);
+        if( bFileLogging )
+            fprintf(logFile,"(a+x1): %05o, (l+x2): %05o)\n", Msw, Lsw);
 /*
 DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
 (a+x1): 40002, (l+x2): 37776)
@@ -145,7 +150,8 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
         else if ((0140000 & Lsw) == 0100000)
             Msw = AddSP16(Msw, SignExtend(NEG_ONE));
         Lsw = OverflowCorrected(Lsw);
-        fprintf(logFile,"(msw: %05o, lsw: %05o)\n", Msw, Lsw);
+        if( bFileLogging )
+            fprintf(logFile,"(msw: %05o, lsw: %05o)\n", Msw, Lsw);
 
         if ((0140000 & Msw) == 0100000)
             mem.setA(SignExtend(NEG_ONE));
@@ -189,8 +195,10 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
         ret = 0;
         break;
     default:
-        fprintf(logFile,"Unknown opcode %05o!\n", opc);
-        fflush(logFile);
+        if( bFileLogging ) {
+            fprintf(logFile,"Unknown opcode %05o!\n", opc);
+            fflush(logFile);
+        }
     }
     return ret;
 }

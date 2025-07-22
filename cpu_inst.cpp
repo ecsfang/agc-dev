@@ -121,10 +121,21 @@ int CCpu::sst(void)
     bClrExtra = true;
 
     static uint32_t clk;
+    {
+        uint64_t us = (uint64_t)(clockCnt*11.7);
+        uint16_t usec = us % 1000;
+        uint16_t msec = (us/1000) % 1000;
+        uint32_t s = us/(1000*1000);
+        uint8_t sec = s % 60;
+        uint8_t min = (s/60) % 60;
+        uint8_t h = (s/(60*60));
 
-    ln = sprintf(logBuf, "[%c%5d]%s", bIntRunning ? '*':' ', clk++, disasm(0,false));
+//    ln = sprintf(logBuf, "[%c%5d]%s", bIntRunning ? '*':' ', clk++, disasm(0,false));
+//ln = sprintf(logBuf, "[%c%6.2f]%s", bIntRunning ? '*':' ', clockCnt*(0.0117), disasm(0,false));
+ln = sprintf(logBuf, "[%c%d:%02d:%02d.%03d%03d]%s", bIntRunning ? '*':' ', h, min, sec, msec, usec, disasm(0,false));
 
-    UpdateIMU();
+    }
+UpdateIMU();
 
     bOF = ValueOverflowed (mem.getA() & MASK_16_BITS ) != POS_ZERO;
 
@@ -164,6 +175,8 @@ int CCpu::sst(void)
     }
     clockCnt += mct;
     dTime += mct;
+    dT1600 += mct;
+    dT3200 += mct;
 
     __uint16_t r = mem.getA();
     int nl = 55-ln;
@@ -176,14 +189,32 @@ int CCpu::sst(void)
     r = mem.getBB();
     ln += sprintf(logBuf+ln,"BB[%05o] ", r & MASK_15_BITS);
     ln += sprintf(logBuf+ln,"IDX[%05o] ", idx);
+    ln += sprintf(logBuf+ln,"T3[%05o] ", mem.read12(REG_TIME3));
+    ln += sprintf(logBuf+ln,"T4[%05o] ", mem.read12(REG_TIME4));
+    ln += sprintf(logBuf+ln,"T5[%05o] ", mem.read12(REG_TIME5));
 #if 0
     ln += sprintf(logBuf+ln,"IZ[%05o] ", mem.read12(REG_ZRUPT));
     ln += sprintf(logBuf+ln,"IB[%05o] ", mem.read12(REG_BRUPT));
     ln += sprintf(logBuf+ln,"IBB[%05o] ", mem.read12(REG_BBRUPT));
 #endif
+#if 0
     fprintf(logFile,"%s\n", logBuf);
+#endif
 
-    if( dTime > 43 ) { // 0.5ms/11.7us
+#define T500US  (43)    // 500us / 11.7us -> 43 cycles
+#define T1_1600 (53)    // 1/1600 / 11.7us -> 53 cycles
+#define T1_3200 (26)    // 1/3200 / 11.7us -> 26 cycles
+
+    if( dT3200 > T1_3200 ) {
+        // 1/3200 seconds has ellapsed
+        dT3200 = 0;
+    }
+    if( dT1600 > T1_1600 ) {
+        // 1/1600 seconds has ellapsed
+        dT1600 = 0;
+    }
+
+    if( dTime > T500US ) {
         // 0.5 ms has ellapsed
         incTime();
         dTime = 0;
@@ -207,7 +238,8 @@ int CCpu::sst(void)
 uint16_t CCpu::handleInterrupt(void)
 {
     uint16_t pc = getPC();
-    fprintf(logFile,"HandleInterrupt [%03X]  @ %05o [%05o]\n", gInterrupt, pc, mem.getOP());
+    if( bFileLogging )
+        fprintf(logFile,"HandleInterrupt [%03X]  @ %05o [%05o]\n", gInterrupt, pc, mem.getOP());
     mem.write12(REG_ZRUPT, pc);
     mem.write12(REG_BRUPT, mem.getOP());
     for(int i=0; i<NR_INTS;i++) {
@@ -215,7 +247,8 @@ uint16_t CCpu::handleInterrupt(void)
         if( gInterrupt & (1<<i) ) {
             uint16_t iPc = BOOT + i*4;
             nextPC = iPc;
-            fprintf(logFile,"Stop and continue @ %05o\n", nextPC);
+            if( bFileLogging )
+                fprintf(logFile,"Stop and continue @ %05o\n", nextPC);
             bIntRunning = true;
             intRunning = iPc;
             //stopAgc();
@@ -237,20 +270,22 @@ void CCpu::showInterrupt(void)
 {
     if( !gInterrupt )
         return;
-    int n = 0;
-    fprintf(logFile, "INTERRUPT (%o): ", gInterrupt);
-    IPRT( iBOOT,      "BOOT")
-    IPRT( iT6RUPT,    "T6RUPT")
-    IPRT( iT5RUPT,    "T5RUPT")
-    IPRT( iT3RUPT,    "T3RUPT")
-    IPRT( iT4RUPT,    "T4RUPT")
-    IPRT( iKEYRUPT1,  "KEYRUPT1")
-    IPRT( iKEYRUPT2,  "KEYRUPT2")
-    IPRT( iUPRUPT,    "UPRUPT")
-    IPRT( iDOWNRUPT,  "DOWNRUPT")
-    IPRT( iRADARRUPT, "RADARRUPT")
-    IPRT( iRUPT10,    "RUPT10")
-    fprintf(logFile, "\n");
+    if( bFileLogging ) {
+        int n = 0;
+        fprintf(logFile, "INTERRUPT (%o): ", gInterrupt);
+        IPRT( iBOOT,      "BOOT")
+        IPRT( iT6RUPT,    "T6RUPT")
+        IPRT( iT5RUPT,    "T5RUPT")
+        IPRT( iT3RUPT,    "T3RUPT")
+        IPRT( iT4RUPT,    "T4RUPT")
+        IPRT( iKEYRUPT1,  "KEYRUPT1")
+        IPRT( iKEYRUPT2,  "KEYRUPT2")
+        IPRT( iUPRUPT,    "UPRUPT")
+        IPRT( iDOWNRUPT,  "DOWNRUPT")
+        IPRT( iRADARRUPT, "RADARRUPT")
+        IPRT( iRUPT10,    "RUPT10")
+        fprintf(logFile, "\n");
+    }
 }
 
 void CCpu::addInterrupt(int i)
@@ -280,7 +315,8 @@ void CCpu::incTime(void) {
         break;
     }
     if( downrupt > 42 ) {
-        fprintf(logFile,"ADD DOWNRUPT!\n");
+        if( bFileLogging )
+            fprintf(logFile,"ADD DOWNRUPT!\n");
         addInterrupt(iDOWNRUPT);
         downrupt = 0;
     }
@@ -320,7 +356,8 @@ void CCpu::SimulateDV(uint16_t a, uint16_t l, uint16_t divisor)
     uint16_t sum = 0;
     int i;
 
-    fprintf(logFile,"DV: a|%05o l|%05o / %05o\n", a, l, divisor);
+    if( bFileLogging )
+        fprintf(logFile,"DV: a|%05o l|%05o / %05o\n", a, l, divisor);
 
     // Assume A contains the sign of the dividend
     dividend_sign = a & 0100000;
@@ -380,7 +417,8 @@ void CCpu::SimulateDV(uint16_t a, uint16_t l, uint16_t divisor)
     mem.setA((dividend_sign != divisor_sign) ? ~a : a);
     // The final value for L is negated if the dividend was negative
     mem.setL((dividend_sign) ? remainder : ~remainder);
-    fprintf(logFile,"DV ==> %05o %05o\n", mem.getA(), mem.getL());
+    if( bFileLogging )
+        fprintf(logFile,"DV ==> %05o %05o\n", mem.getA(), mem.getL());
 
 /*
     double f = btof(a, l);

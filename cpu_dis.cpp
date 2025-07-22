@@ -434,6 +434,7 @@ char *CCpu::disasm(int offs, bool bUpdate)
                 blk = 2;
             else if( pc >= 006000 && pc <010000 )
                 blk = 3;
+
             if( zpc >= 04000 && zpc < 10000 )
                 pDis += sprintf(disBuf+pDis, "[   %04o] %05o %c ", zpc, _opc, ex);
             else

@@ -5,6 +5,7 @@
 #include "memory.h"
 
 extern FILE *logFile;
+extern bool bFileLogging;
 
 #define POS_OVF() (bOF && s2 == 0)
 #define NEG_OVF() (bOF && s2 != 0)
@@ -66,7 +67,9 @@ class CCpu {
     uint16_t    mwAddr;
     uint16_t    mwBreak;
     uint32_t    clockCnt;
-    uint16_t    dTime;
+    uint16_t    dTime;  // Count 0.5ms interval
+    uint16_t    dT1600; // Count 1/1600 seconds
+    uint16_t    dT3200; // Count 1/3200 seconds
     uint8_t     mct;
     uint32_t    gInterrupt;
     uint16_t    nextPC;

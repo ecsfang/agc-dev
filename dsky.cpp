@@ -36,7 +36,7 @@ typedef struct {
 char val2chr(uint8_t v)
 {
     switch(v) {
-        case 0:  return 'x';
+        case 0:  return ' ';
         case 21: return '0';
         case 3:  return '1';
         case 25: return '2';
@@ -64,19 +64,94 @@ void send2dsky(uint16_t addr, uint16_t data)
             n = sprintf(cmd, "#%04X\n", data & 0xFFFF);
         if( addr == 011 )
             n = sprintf(cmd, "&%04X\n", data & 0xFFFF);
-        fprintf(logFile,"Send to DSKY: %5.5s", cmd);
-        fflush(logFile);
+        if( bFileLogging ) {
+            fprintf(logFile,"Send to DSKY: %5.5s", cmd);
+            fflush(logFile);
+        }
         write(fdDSKY, cmd, n);
         oData = data;
     }
 }
+
+#define DSKY_X_AGC_WARN     BIT_1
+#define DSKY_X_TEMP         BIT_4
+#define DSKY_X_KEY_REL      BIT_5
+#define DSKY_X_VN_FLASH     BIT_6
+#define DSKY_X_OPER_ERR     BIT_7
+#define DSKY_X_RESTART      BIT_8
+#define DSKY_X_STBY         BIT_9
+
+#if 0
+void void CCpu::UpdateDSKY(agc_t *State)
+{
+  static unsigned LastChannel163 = State->DskyChannel163;
+
+  // Clear all flags ...
+  State->DskyChannel163 &= ~(DSKY_X_KEY_REL | DSKY_X_VN_FLASH | DSKY_X_OPER_ERR | DSKY_X_RESTART | DSKY_X_STBY | DSKY_X_AGC_WARN | DSKY_X_TEMP);
+
+  if (mem.getOutMem()[013] & 01000)
+    // The light test is active. Light RESTART and STBY.
+    State->DskyChannel163 |= DSKY_X_RESTART | DSKY_X_STBY; // 
+
+  // If we're in standby, light the standby light
+  if (State->Standby)
+    State->DskyChannel163 |= DSKY_X_STBY;
+
+  // Make the RESTART light mirror State->RestartLight.
+  if (State->RestartLight)
+    State->DskyChannel163 |= DSKY_X_RESTART;
+
+  // Light TEMP if channel 11 bit 4 is set, or channel 30 bit 15 is set
+  if ((mem.getOutMem()[011] & 010) || (mem.getOutMem()[030] & 040000))
+    State->DskyChannel163 |= DSKY_X_TEMP;
+
+  // Set KEY REL and OPER ERR according to channel 11
+  if (getOutMem()[011] & DSKY_X_KEY_REL)
+    State->DskyChannel163 |= DSKY_X_KEY_REL;
+  if (getOutMem()[011] & DSKY_X_OPER_ERR)
+    State->DskyChannel163 |= DSKY_X_OPER_ERR;
+
+  // Turn on the AGC warning light if the warning filter is above its threshold
+  if (State->WarningFilter > WARNING_FILTER_THRESHOLD)
+    {
+      State->DskyChannel163 |= DSKY_X_AGC_WARN;
+
+      // Set the AGC Warning input bit in channel 33
+      mem.getOutMem()[033] &= 057777;
+    }
+
+  // Update the DSKY flash counter based on the DSKY timer
+  while (State->DskyTimer >= DSKY_X_OVERFLOW)
+    {
+      State->DskyTimer -= DSKY_X_OVERFLOW;
+      State->DskyFlash = (State->DskyFlash + 1) % DSKY_X_FLASH_PERIOD;
+    }
+
+  // Flashing lights on the DSKY have a period of 1.28s, and a 75% duty cycle
+  if (!State->Standby && State->DskyFlash == 0)
+    {
+      // If V/N FLASH is high, then the lights are turned off
+      if (getOutMem()[011] & DSKY_X_VN_FLASH)
+        State->DskyChannel163 |= DSKY_X_VN_FLASH;
+
+      // Flash off the KEY REL and OPER ERR lamps
+      State->DskyChannel163 &= ~DSKY_X_KEY_REL;
+      State->DskyChannel163 &= ~DSKY_X_OPER_ERR;
+    }
+
+  // Send out updated display information, if something on the DSKY changed
+  if (State->DskyChannel163 != LastChannel163)
+    ChannelOutput(State, 0163, State->DskyChannel163);
+}
+#endif
 
 void CCpu::updateDSKY(WINDOW *win, bool bRun)
 {
     if( bRun && !mem.dsky() )
         return;
 
-    fprintf(logFile,"Update DSKY!\n");
+    if( bFileLogging )
+        fprintf(logFile,"Update DSKY!\n");
 
     static DSP_t dsp;
     static DSP_t bkDsp;
@@ -229,7 +304,8 @@ void CCpu::keyPress(Key_e key)
         default:
             mem.writeIO(015, key);
             addInterrupt(iKEYRUPT1);
-            fprintf(logFile,"KEYRUPT interrupt! (key=%02o\n", key);
+            if( bFileLogging )
+                fprintf(logFile,"KEYRUPT interrupt! (key=%02o\n", key);
     }
 }
 

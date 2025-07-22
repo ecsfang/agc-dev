@@ -14,11 +14,13 @@ int CCpu::op0ex(void)
             setA(io);
         else
             setA(SignExtend(io));
-        fprintf(logFile," I/O READ %03o <-- %05o\n", kc, io);
+        if(bFileLogging)
+            fprintf(logFile," I/O READ %03o <-- %05o\n", kc, io);
         ret = 0;
         break;
     case 001000:    // WRITE
-        fprintf(logFile," I/O WRITE %03o --> %05o\n", kc, a);
+        if(bFileLogging)
+            fprintf(logFile," I/O WRITE %03o --> %05o\n", kc, a);
         if( IS_L_OR_Q(kc) )
             mem.write12(kc, a);
         else
@@ -32,7 +34,8 @@ int CCpu::op0ex(void)
             setA(a & io);
         else
             setA(SignExtend(OverflowCorrected(a) & io));
-        fprintf(logFile," I/O RAND %03o <-- %05o (%05o & %05o)\n", kc, a&io, a, io);
+        if(bFileLogging)
+            fprintf(logFile," I/O RAND %03o <-- %05o (%05o & %05o)\n", kc, a&io, a, io);
         ret = 0;
         break;
     case 003000:    // WAND
@@ -45,7 +48,8 @@ int CCpu::op0ex(void)
                 setA(SignExtend(xio));
             }
             mem.writeIO(kc, xio);
-            fprintf(logFile," I/O WAND %03o --> %05o (%05o & %05o)\n", kc, mem.getA(), a, io);
+            if(bFileLogging)
+                fprintf(logFile," I/O WAND %03o --> %05o (%05o & %05o)\n", kc, mem.getA(), a, io);
         }
         ret = 0;
         break;
@@ -54,7 +58,8 @@ int CCpu::op0ex(void)
             setA(a | io);
         else
             setA(SignExtend(OverflowCorrected(a) | io));
-        fprintf(logFile," I/O ROR %03o <-- %05o (%05o | %05o)\n", kc, mem.getA(), a, io);
+        if(bFileLogging)
+            fprintf(logFile," I/O ROR %03o <-- %05o (%05o | %05o)\n", kc, mem.getA(), a, io);
         ret = 0;
         break;
     case 005000:    // WOR
@@ -67,7 +72,8 @@ int CCpu::op0ex(void)
                 setA(SignExtend(xio));
             }
             mem.writeIO(kc, xio);
-            fprintf(logFile," I/O WOR %03o --> %05o (%05o | %05o)\n", kc, mem.getA(), a, io);
+            if(bFileLogging)
+                fprintf(logFile," I/O WOR %03o --> %05o (%05o | %05o)\n", kc, mem.getA(), a, io);
         }
         ret = 0;
         break;
@@ -77,15 +83,19 @@ int CCpu::op0ex(void)
         else
             setA(SignExtend(OverflowCorrected(a) ^ io));
         ret = 0;
-        fprintf(logFile," I/O RXOR %03o <-- %05o (%05o ^ %05o)\n", kc, mem.getA(), a, io);
+        if(bFileLogging)
+            fprintf(logFile," I/O RXOR %03o <-- %05o (%05o ^ %05o)\n", kc, mem.getA(), a, io);
         break;
     case 007000:    // EDRUPT
-        fprintf(logFile," EDRUPT - not handled!\n");
+        if(bFileLogging)
+            fprintf(logFile," EDRUPT - not handled!\n");
         mct = 3;
         break;
     default:
-        fprintf(logFile,"Unknown opcode %05o!\n", opc);
-        fflush(logFile);
+        if(bFileLogging) {
+            fprintf(logFile,"Unknown opcode %05o!\n", opc);
+            fflush(logFile);
+        }
     }
     return ret;
 }

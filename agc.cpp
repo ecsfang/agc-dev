@@ -8,6 +8,7 @@ using namespace std;
 #include <ncurses.h>
 
 FILE    *logFile=NULL;
+bool bFileLogging = false;
 
 extern int dskyInit(void);
 
@@ -375,6 +376,17 @@ void stopAgc(void)
     nodelay(myWindow, false);
 }
 
+int getOctValue(const char *msg, int row)
+{
+    //char mesg[]="Breakpoint address:";
+    char buf[80];
+    int br = 0;
+    mvwprintw(myWindow,row,0,"%s", msg);
+    getstr(buf);
+    sscanf(buf, "%o", &br);
+    return br;
+}
+
 int main(int argc, char *argv[])
 {
     logFile = fopen("agc.log", "w");
@@ -397,11 +409,10 @@ int main(int argc, char *argv[])
 
 
     int n = 0;
+    int br;
     char key;
     cpu.readCore(argv[1]);
     uint16_t brAddr = 0;
-
-    fprintf(logFile,"Starting!\n");
 
     if( argc == 3 ) {
         fprintf(logFile,"Read symbols ...\n");
@@ -411,6 +422,8 @@ int main(int argc, char *argv[])
 //        brAddr = n;
     }
 
+    fprintf(logFile,"Starting!\n");
+    fflush(logFile);
 
     myWindow = initscr();			/* Start curses mode 		  */
     noecho();
@@ -425,7 +438,7 @@ int main(int argc, char *argv[])
     dskyInit();
 
     do {
-        if( brAddr == cpu.getPC() && key !=  'R' ) {
+        if( brAddr == cpu.getPC() && key !=  '&' ) {
             stopAgc();
         }
         updateScreen(myWindow, &cpu, bRunning);
@@ -454,80 +467,45 @@ int main(int argc, char *argv[])
             bRunning = true;
             nodelay(myWindow, true);
             //halfdelay(1);
-            key = 'R';
+            key = '&'; // Mark as running ...
             break;
         case 'b':
-            {
-                char mesg[]="Breakpoint address:";
-                char buf[80];
-                int row, col;
-                int br = 0;
-                mvwprintw(myWindow,15,0,"%s", mesg);
-                getstr(buf);
-                sscanf(buf, "%o", &br);
-                brAddr = (uint16_t)br;
-                cpu.setBrkp(brAddr);
-            }
+            brAddr = (uint16_t)getOctValue("Breakpoint address:", 15);
+            cpu.setBrkp(brAddr);
             break;
         case 'm':
-            {
-                char mesg[]="Memory address:";
-                char buf[80];
-                int row, col;
-                int br = 0;
-                mvwprintw(myWindow,15,0,"%s", mesg);
-                getstr(buf);
-                sscanf(buf, "%o", &br);
-                cpu.memWatch(br);
-            }
+            br = getOctValue("Memory address:", 15);
+            cpu.memWatch(br);
             break;
         case 'w':
-            {
-                char mesg[]="Memory address:";
-                char buf[80];
-                int row, col;
-                int br = 0;
-                mvwprintw(myWindow,15,0,"%s", mesg);
-                getstr(buf);
-                sscanf(buf, "%o", &br);
-                cpu.memBreak(br);
-            }
+            br = getOctValue("Memory address:", 15);
+            cpu.memBreak(br);
             break;
         case 'p':
-            {
-                char mesg[]="Enter new PC:";
-                char buf[80];
-                int row, col;
-                int pc = 0;
-                mvwprintw(myWindow,12,0,"%s", mesg);
-                getstr(buf);
-                sscanf(buf, "%o", &pc);
-                cpu.setPC(pc);
-            }
+            br = getOctValue("Enter new PC:", 12);
+            cpu.setPC(br);
             break;
-        case 'P':   // PRO-key
-            //   if (State->InputChannel[032] & 020000)
-            cpu.keyPress(DSKY_PRO);
-            break;
-        case 'V':   // VERB-key
-            cpu.keyPress(DSKY_VERB);
-            break;
-        case 'N':   // NOUN-key
-            cpu.keyPress(DSKY_NOUN);
-            break;
-        case 'E':   // ENTR-key
-            cpu.keyPress(DSKY_ENTR);
-            break;
-        case '0': cpu.keyPress(DSKY_0); break;
-        case '1': cpu.keyPress(DSKY_1); break;
-        case '2': cpu.keyPress(DSKY_2); break;
-        case '3': cpu.keyPress(DSKY_3); break;
-        case '4': cpu.keyPress(DSKY_4); break;
-        case '5': cpu.keyPress(DSKY_5); break;
-        case '6': cpu.keyPress(DSKY_6); break;
-        case '7': cpu.keyPress(DSKY_7); break;
-        case '8': cpu.keyPress(DSKY_8); break;
-        case '9': cpu.keyPress(DSKY_9); break;
+
+        // Handle DSKY keys ...
+        case 'P': cpu.keyPress(DSKY_PRO);     break;
+        case 'V': cpu.keyPress(DSKY_VERB);    break;
+        case 'N': cpu.keyPress(DSKY_NOUN);    break;
+        case 'E': cpu.keyPress(DSKY_ENTR);    break;
+        case '0': cpu.keyPress(DSKY_0);       break;
+        case '1': cpu.keyPress(DSKY_1);       break;
+        case '2': cpu.keyPress(DSKY_2);       break;
+        case '3': cpu.keyPress(DSKY_3);       break;
+        case '4': cpu.keyPress(DSKY_4);       break;
+        case '5': cpu.keyPress(DSKY_5);       break;
+        case '6': cpu.keyPress(DSKY_6);       break;
+        case '7': cpu.keyPress(DSKY_7);       break;
+        case '8': cpu.keyPress(DSKY_8);       break;
+        case '9': cpu.keyPress(DSKY_9);       break;
+        case 'R': cpu.keyPress(DSKY_RSET);    break;
+        case 'K': cpu.keyPress(DSKY_KEY_REL); break;
+        case '+': cpu.keyPress(DSKY_PLUS);    break;
+        case '-': cpu.keyPress(DSKY_MINUS);   break;
+        case 'C': cpu.keyPress(DSKY_CLR);     break;
         };
     } while(key != 'q');
 	endwin();			/* End curses mode		  */

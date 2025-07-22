@@ -6,6 +6,7 @@
 #include <assert.h>
 
 extern void send2dsky(__uint16_t addr, __uint16_t data);
+extern bool bFileLogging;
 
 #define ERASABLE_BLK_SIZE   0400
 #define FIXED_BLK_SIZE      02000
@@ -338,59 +339,43 @@ public:
         return FEB;
     }
     // Write data to a logical address
-    void write12(__uint16_t addr, __uint16_t data) {
-        __uint16_t _addr = addr2mem(addr);
-//        if( _addr < 04000 )
-//            fprintf(logFile,"#### WR RAM [%04o] = %05o\n", _addr, data);
-        if( _addr != ERR_ADDR )
-            writePys(_addr, data);
+    __uint16_t write12(__uint16_t addr, __uint16_t data) {
+        return writePys(addr2mem(addr), data);
     }
     // Write data to a physical address
-    void writePys(__uint16_t addr, __uint16_t data) {
+    __uint16_t writePys(__uint16_t addr, __uint16_t data) {
         if( addr < TOTAL_SIZE ) {
             switch( addr ) {
-                case 00000: setA(data); break;
-                case 00003: setEB(data); break;
-                case 00004: setFB(data); break;
-                case 00006: setBB(data); break;
-                case 00007: mem.word[addr] = 0; break;
-                default:
-                    if( addr >= 04000 && addr < 010000 )
-                        addr += FB_MEM_START;
-//                    if( addr == REG_Z )
-//                        fprintf(logFile, "UPDATING Z-REG!! mem[%05o] = %05o\n", addr, data);
-                    if( IS_EDIT_REG(addr) ) {
-//                        fprintf(logFile,">>>> UPDATE [%o] %05o -> ", addr, data);
-
-                        switch(addr) {
-                        case CYR_REG:
-                            // abc def ghi jkl mno -> oab cde fgh ijk lmn
+            case REG_A:     setA(data); break;
+            case REG_EB:    setEB(data); break;
+            case REG_FB:    setFB(data); break;
+            case REG_BB:    setBB(data); break;
+            case REG_ZERO:  mem.word[addr] = 0; break;
+            case CYR_REG:   // abc def ghi jkl mno -> oab cde fgh ijk lmn
                             data = (((data & 077777) >> 1) | ((data & BIT_1) << 14));
                             break;
-                        case SR_REG:
-                            // abc def ghi jkl mno -> aab cde fgh ijk lmn
+            case SR_REG:    // abc def ghi jkl mno -> aab cde fgh ijk lmn
                             data = (((data & 077777) >> 1) | (data & BIT_15));
                             break;
-                        case CYL_REG:
-                            // abc def ghi jkl mno -> bcd efg hij klm noa
+            case CYL_REG:   // abc def ghi jkl mno -> bcd efg hij klm noa
                             data = ((data << BIT_1) | ((data & BIT_15) >> 14 )) & 077777;
                             break;
-                        case EDOP_REG:
-                            // abc def ghi jkl mno -> 000 000 00b cde fgh
+            case EDOP_REG:  // abc def ghi jkl mno -> 000 000 00b cde fgh
                             data = (data >> 7) & 000177;
                             break;
-                        }
-//                        fprintf(logFile,"%05o\n", data);
-                    }
-                    mem.word[addr] = data;
+            default:
+                            if( addr >= 04000 && addr < 010000 )
+                                addr += FB_MEM_START;
             }
+            mem.word[addr] = data;
         } else {
             fprintf(logFile,"#### WR:Bad memory address: %05o [%o]!!\n", addr, TOTAL_SIZE);
         }
+        return data;
     }
     __uint16_t readIO(__uint16_t addr)
     {
-        if (addr < 0 || addr > 0777)
+        if ( addr > 0777 )
             return 0;
         switch( addr ) {
             case REG_L:
@@ -420,7 +405,7 @@ public:
     {
         // The value should be in AGC format. 
         data &= 077777;
-        if (addr < 0 || addr > 0777)
+        if( addr > 0777 )
             return;
         switch( addr ) {
         case REG_L:
@@ -440,10 +425,12 @@ public:
                 // by means of latching relays.  We need to capture this data.
                 outIoMem[(data & IO_A_MASK) >> IO_A_SHIFT] = data;
                 send2dsky(addr, data);
-                fprintf(logFile,"DSKY >> A:%2d ", (data & IO_A_MASK) >> IO_A_SHIFT);
-                fprintf(logFile,"B:%d ",  (data & IO_B_MASK) >> IO_B_SHIFT);
-                fprintf(logFile,"C:%2d ", (data & IO_C_MASK) >> IO_C_SHIFT);
-                fprintf(logFile,"D:%2d\n", (data & IO_D_MASK) >> IO_D_SHIFT);
+                if( bFileLogging ) {
+                    fprintf(logFile,"DSKY >> A:%2d ", (data & IO_A_MASK) >> IO_A_SHIFT);
+                    fprintf(logFile,"B:%d ",  (data & IO_B_MASK) >> IO_B_SHIFT);
+                    fprintf(logFile,"C:%2d ", (data & IO_C_MASK) >> IO_C_SHIFT);
+                    fprintf(logFile,"D:%2d\n", (data & IO_D_MASK) >> IO_D_SHIFT);
+                }
                 bDSky = true;
                 break;
             case 011:
@@ -487,25 +474,23 @@ public:
         write12(addr, read12(addr));
     }
     __uint16_t  inc(__uint16_t addr) {
-        __uint16_t i = read12(addr)+1; 
-        write12(addr, i);
-        return i;
+        return write12(addr, read12(addr)+1);
     }
 #define SIGN_EXTEND(w) ((w & MASK_15_BITS) | ((w << 1) & S2_MASK))
     __uint16_t  readPys(__uint16_t addr) {
         if( addr >= 04000 && addr < 010000 )
             addr += FB_MEM_START;
-        if( addr >= TOTAL_SIZE )
-            fprintf(logFile,"#### RD: Bad memory address: %05o!!\n", addr);
+        if( addr >= TOTAL_SIZE ) {
+            if( bFileLogging )
+                fprintf(logFile,"#### RD: Bad memory address: %05o!!\n", addr);
+            return ERR_ADDR;
+        }
         if( addr == 00007 ) // Reg ZERO
             return 0;
-        return addr < TOTAL_SIZE ? mem.word[addr] : 0;
+        return mem.word[addr];
     }
     __uint16_t  read12(__uint16_t addr) {
-        __uint16_t _addr = addr2mem(addr);
-        if( _addr != ERR_ADDR )
-            return readPys(_addr);
-        return ERR_ADDR;
+        return readPys(addr2mem(addr));
     }
 #if 0
     // Map 12 bit address to physical address
