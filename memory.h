@@ -11,6 +11,8 @@ extern bool bFileLogging;
 #define ERASABLE_BLK_SIZE   0400
 #define FIXED_BLK_SIZE      02000
 
+#define FIXED_MEM_START     04000
+
 #define MASK_12B_ADDRESS    07777
 #define MASK_10B_ADDRESS    01777
 #define MASK_16_BITS        0177777
@@ -51,13 +53,19 @@ extern bool bFileLogging;
 #define BIT_16              (1<<15)
 #define BIT_17              (1<<16)
 
-#define S1_MASK             BIT_15
-#define S2_MASK             BIT_16
+#define S1_MASK             BIT_15              // 040000
+#define S2_MASK             BIT_16              // 100000
+
+#define OF_MASK             (S1_MASK|S2_MASK)   // 140000
+#define POS_OF              S1_MASK
+#define NEG_OF              S2_MASK
+#define IS_OF(x)            ((x) & OF_MASK)
 #define OVF_MASK            BIT_17
 #define MANTISSA_MASK       (MASK_15_BITS>>1)
 
 #define IS_POS(x) (((x)&S1_MASK) == 0)
 #define IS_NEG(x) (((x)&S1_MASK) != 0)
+#define IS_NEG16(x) (((x)&S2_MASK) != 0)
 
 #define ERASABLE_SIZE   (010 * ERASABLE_BLK_SIZE)
 #define FIXED_SIZE      (042 * FIXED_BLK_SIZE)
@@ -80,6 +88,8 @@ extern bool bFileLogging;
 #define BB_MASK     076007 // FFF FF0 000 000 EEE
 
 #define SUPERBNK_MASK 000160
+
+#define REG16           3
 
 #define CYR_REG      0020
 #define SR_REG       0021
@@ -110,6 +120,11 @@ extern bool bFileLogging;
 #define RUPT10      04050   // aka HANDRUPT
                             // Selectable from three possible sources:
                             // Trap 31A, Trap 31B, and Trap 32.
+
+uint16_t DABS(uint16_t x);
+uint16_t DABS16(uint16_t x);
+int16_t ValueOverflowed (int Value);
+int16_t OverflowCorrected (int Value);
 
 /**
 #  ENGINE ON BIT 13 OF CHANNEL 11
@@ -236,6 +251,8 @@ class CMemory {
     __uint16_t  outIoMem[OUT_IO_SIZE];
     __uint16_t  FEB;
     bool        bDSky;
+    bool        bRestartLight;
+    bool        bProt;
 public:
     CMemory() {
         // Clear all memory
@@ -244,12 +261,17 @@ public:
         memset(inIoMem,0,IN_IO_SIZE*sizeof(__uint16_t));
         memset(outIoMem,0,OUT_IO_SIZE*sizeof(__uint16_t));
         // Init some i/o channels
-        inIoMem[030] = 037777;
-        inIoMem[031] = 077777;
-        inIoMem[032] = 077777;
-        inIoMem[033] = 077777;
+        inIoMem[030] = MASK_14_BITS;
+        inIoMem[031] = MASK_15_BITS;
+        inIoMem[032] = MASK_15_BITS;
+        inIoMem[033] = MASK_15_BITS;
         bDSky = false;
+        bRestartLight = true;
         FEB = 0;
+        bProt = true;
+    }
+    void protection(bool prot) {
+        bProt = prot;
     }
     bool dsky(void) {
         bool dsky = bDSky;
@@ -260,8 +282,9 @@ public:
     __uint16_t getOP(int offs = 0) {
         return read12((mem.Z+offs) & MASK_12B_ADDRESS);
     }
+    void dump(void);
     void setZ(__uint16_t pc) {
-        mem.Z = pc;
+        mem.Z = pc & MASK_12_BITS;
     }
     __uint16_t getZ(void) {
         return mem.Z;
@@ -318,19 +341,22 @@ public:
     __uint16_t step() {
         return ++mem.Z;
     }
-    void setEB(__uint16_t eb) {
+    __uint16_t setEB(__uint16_t eb) {
         mem.EB = eb & EB_MASK;
         mem.BB = mem.FB | (mem.EB >> EB_SHIFT);
+        return mem.EB;
     }
-    void setFB(__uint16_t fb) {
+    __uint16_t setFB(__uint16_t fb) {
         mem.FB = fb & FB_MASK;
         mem.BB = mem.FB | (mem.EB >> EB_SHIFT);
+        return mem.FB;
     }
-    void setBB(__uint16_t bb) {
+    __uint16_t setBB(__uint16_t bb) {
         // Clear all unused bts ...
         mem.BB = bb & (FB_MASK | (EB_MASK >> EB_SHIFT));
         mem.EB = (mem.BB << EB_SHIFT) & EB_MASK;
         mem.FB = mem.BB & FB_MASK;
+        return mem.BB;
     }
     void setFEB(__uint8_t feb) {
         FEB = feb;
@@ -345,20 +371,22 @@ public:
     // Write data to a physical address
     __uint16_t writePys(__uint16_t addr, __uint16_t data) {
         if( addr < TOTAL_SIZE ) {
+          if( addr < ERASABLE_SIZE ) {
             switch( addr ) {
-            case REG_A:     setA(data); break;
-            case REG_EB:    setEB(data); break;
-            case REG_FB:    setFB(data); break;
-            case REG_BB:    setBB(data); break;
-            case REG_ZERO:  mem.word[addr] = 0; break;
+            case REG_A:     setA(data); return data;
+            case REG_L:     setL(data); return data & MASK_15_BITS;
+            case REG_EB:    return setEB(data);
+            case REG_FB:    return setFB(data);
+            case REG_BB:    return setBB(data);
+            //case REG_ZERO:  data = 0; break;
             case CYR_REG:   // abc def ghi jkl mno -> oab cde fgh ijk lmn
-                            data = (((data & 077777) >> 1) | ((data & BIT_1) << 14));
+                            data = (((data & MASK_15_BITS) >> 1) | ((data & BIT_1) << 14));
                             break;
             case SR_REG:    // abc def ghi jkl mno -> aab cde fgh ijk lmn
-                            data = (((data & 077777) >> 1) | (data & BIT_15));
+                            data = (((data & MASK_15_BITS) >> 1) | (data & BIT_15));
                             break;
             case CYL_REG:   // abc def ghi jkl mno -> bcd efg hij klm noa
-                            data = ((data << BIT_1) | ((data & BIT_15) >> 14 )) & 077777;
+                            data = ((data << BIT_1) | ((data & BIT_15) >> 14 )) & MASK_15_BITS;
                             break;
             case EDOP_REG:  // abc def ghi jkl mno -> 000 000 00b cde fgh
                             data = (data >> 7) & 000177;
@@ -367,7 +395,13 @@ public:
                             if( addr >= 04000 && addr < 010000 )
                                 addr += FB_MEM_START;
             }
-            mem.word[addr] = data;
+            mem.word[addr] = data; //addr < 3 ? data : OverflowCorrected(data);
+          } else {
+            if( bProt )
+                fprintf(logFile,"#### WRE:Bad memory address: %05o [%o]!!\n", addr, TOTAL_SIZE);
+            else
+                mem.word[addr] = data;
+          }
         } else {
             fprintf(logFile,"#### WR:Bad memory address: %05o [%o]!!\n", addr, TOTAL_SIZE);
         }
@@ -404,7 +438,7 @@ public:
     void writeIO(__uint16_t addr, __uint16_t data)
     {
         // The value should be in AGC format. 
-        data &= 077777;
+        data &= MASK_15_BITS;
         if( addr > 0777 )
             return;
         switch( addr ) {
@@ -437,6 +471,8 @@ public:
                 // Channel 11 is converted externally to the CPU into up to 16 ports,
                 // by means of latching relays.  We need to capture this data.
                 send2dsky(addr, data);
+                bDSky = true;
+                break;
             case 013:
                 // Enable the appropriate traps for HANDRUPT. Note that the trap
                 // settings cannot be read back out, so after setting the traps the
@@ -450,13 +486,15 @@ public:
                     State->Trap32 = 1;
 #endif
                 data &= 043777;
+                send2dsky(addr, data | (bRestartLight?1<<11:0));
+                bDSky = true;
                 break;    
             case 015:
             case 016:
                 if( data == 022 ) {
                     // RSET being pressed on either DSKY clears the RESTART light
                     // flip-flop directly, without software intervention
-                    // RestartLight = 0;
+                    bRestartLight = false;
                 }
                 break;
             case 033:

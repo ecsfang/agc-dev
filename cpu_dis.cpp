@@ -2,6 +2,8 @@
 #include "cpu.h"
 #include <map>
 
+extern void stopAgc(void);
+
 using namespace std;
 
 typedef struct {
@@ -81,7 +83,7 @@ void CCpu::dispReg(WINDOW *win)
             if( regs[y].addr == 077 ) {
                 mvwprintw(win, y, 0, "%3s:    [%c] ", regs[y].name, mem.getFEB() ? 'X' : ' ');
             } else if( regs[y].addr < REG_EB ) {
-                mvwprintw(win, y, 0, "%3s: %d%d:%05o ", regs[y].name, r&S2_MASK ? 1 : 0, r & S1_MASK ? 1 : 0, r & regs[y].mask);
+                mvwprintw(win, y, 0, "%3s: %d%d:%05o ", regs[y].name, r&S2_MASK ? 1 : 0, IS_NEG(r) ? 1 : 0, r & regs[y].mask);
             } else
                 mvwprintw(win, y, 0, "%3s:    %05o ", regs[y].name, r & regs[y].mask);
             if( regs[y].addr == REG_EB ) mvwprintw(win, y, 12, "[%02o]", (r & EB_MASK)>>EB_SHIFT);
@@ -101,7 +103,7 @@ void CCpu::dispReg(WINDOW *win)
     mvwprintw(win, y1++, COL_2, "    OF: [%c]", OF() ? (POS_OVF()?'+':'-') : ' ' );
     mvwprintw(win, y1++, COL_2, " IRUPT: [%c]%s", bInterrupt ? (bIntRunning ? '-' : 'X') : ' ', iBuf );
     mvwprintw(win, y1++, COL_2, " INDEX: %04o", idx );
-    mvwprintw(win, y1++, COL_2, "   OPC: %o", (opc & 070000) >> 12 );
+    mvwprintw(win, y1++, COL_2, "   OPC: %o", (_opc & 070000) >> 12 );
     mvwprintw(win, y1++, COL_2, "    QC: %o", qc );
     mvwprintw(win, y1++, COL_2, "EXTEND: [%c]", bExtracode ? 'X' : ' ' );
     mvwprintw(win, y1++, COL_2, "   CYR: [%05o]", mem.read12(CYR_REG));
@@ -147,8 +149,8 @@ void CCpu::dispReg(WINDOW *win)
 
 void CCpu::dis0ex(void)
 {
-    __uint16_t kc = opc & MASK_IO_ADDRESS;
-    switch(opc & 077000) {
+    __uint16_t kc = _opc & MASK_IO_ADDRESS;
+    switch(_opc & 077000) {
         case 000000:
             pDis += sprintf(disBuf+pDis, "READ %03o", kc);
             break;
@@ -174,7 +176,7 @@ void CCpu::dis0ex(void)
             pDis += sprintf(disBuf+pDis, "EDRUPT %03o", kc);
             break;
         default:
-            pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", opc);
+            pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", _opc);
     }
 }
 
@@ -256,7 +258,7 @@ void CCpu::dis7ex(void)
 
 void CCpu::dis0(void)
 {
-    switch(opc) {
+    switch(_opc) {
     case 000000:
         pDis += sprintf(disBuf+pDis, "XXALQ");
         break;
@@ -317,7 +319,7 @@ void CCpu::dis2(void)
         pDis += sprintf(disBuf+pDis, "ADS %s", mAddr(k10));
         break;
     default:
-        pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", opc);
+        pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", _opc);
     }
 }
 
@@ -337,7 +339,7 @@ void CCpu::dis4(void)
 {
     // The "Clear and Subtract" (or "Clear and Subtract Erasable" or "Clear and Subtract Fixed") instruction moves
     // the contents of a memory location into the accumulator.
-    if( opc == 040000 )
+    if( _opc == 040000 )
         pDis += sprintf(disBuf+pDis, "COM");
     else
         pDis += sprintf(disBuf+pDis, "CS %s", mAddr(k12));
@@ -347,12 +349,12 @@ void CCpu::dis5(void)
 {
     switch( qc ) {
     case 01: // swap [k-1,k] and [a,l]
-        if( opc == 052005 )
+        if( _opc == 052005 )
             pDis += sprintf(disBuf+pDis, "DTCF");
-        else if( opc == 052006 )
+        else if( _opc == 052006 )
             pDis += sprintf(disBuf+pDis, "DTCB");
         else
-            pDis += sprintf(disBuf+pDis, "DXCH %s", mAddr(k10-1));
+            pDis += sprintf(disBuf+pDis, "[%o]DXCH %s", _opc, mAddr(k10-1));
         break;
     case 02:
         switch(k10) {
@@ -376,13 +378,13 @@ void CCpu::dis5(void)
             pDis += sprintf(disBuf+pDis, "INDEX %s", mAddr(k10));
         break;
     default:
-        pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", opc);
+        pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", _opc);
     }
 }
 
 void CCpu::dis6(void)
 {
-    if( opc == 060000 )
+    if( _opc == 060000 )
         pDis += sprintf(disBuf+pDis, "DOUBLE");
     else
         pDis += sprintf(disBuf+pDis, "AD %s", mAddr(k12));
@@ -393,6 +395,43 @@ void CCpu::dis7(void)
     pDis += sprintf(disBuf+pDis, "MASK %s", mAddr(k12));
 }
 
+uint16_t CCpu::getPC(char *buf)
+{
+    uint16_t zpc = mem.getZ();
+    uint16_t pc = mem.getPysZ();
+    uint8_t blk = (pc - 010000) / FIXED_BLK_SIZE;
+
+    if( pc < FIXED_MEM_START ) {
+        assert( zpc < 02000 );
+        // Erasable memory ( 00000 -> 04000 )
+        blk = pc / 0400;
+        if( zpc >= 0 && zpc < 01400 )
+            return sprintf(buf, "{   %04o}", zpc);
+        else
+            return sprintf(buf, "{E%o %04o}", blk, zpc);
+    } else {
+        // Fixed memory (04000 -> )
+        if( !(zpc >= 02000 && zpc < 010000) ) {
+            fprintf(logFile,"\nzpc: %05o pc: %05o\n", zpc, pc);
+            //assert( zpc >= 02000 && zpc < 010000 );
+            stopAgc();
+        }
+        if( pc >= 010000 && pc <012000 )
+            blk = 0;
+        else if( pc >= 012000 && pc <014000 )
+            blk = 1;
+        else if( pc >= 004000 && pc <006000 )
+            blk = 2;
+        else if( pc >= 006000 && pc <010000 )
+            blk = 3;
+
+        if( zpc >= FIXED_MEM_START && zpc < 10000 )
+            return sprintf(buf, "[   %04o]", zpc);
+        else
+            return sprintf(buf, "[%02o,%04o]", blk, zpc);
+    }
+    return 0;
+}
 
 char *CCpu::disasm(int offs, bool bUpdate)
 {
@@ -400,7 +439,7 @@ char *CCpu::disasm(int offs, bool bUpdate)
     uint16_t zpc = mem.getZ()+offs;
     uint16_t pc = mem.getPysZ()+offs;
     uint8_t blk = (pc - 010000) / FIXED_BLK_SIZE;
-    uint16_t _opc = opc & 077777;
+    _opc = opc & MASK_15_BITS;
     if( bUpdate )
         getOP(false, offs);
 
@@ -417,7 +456,9 @@ char *CCpu::disasm(int offs, bool bUpdate)
     if( offs )
         pDis += sprintf(disBuf+pDis, "          %05o   ", _opc);
     else {
-        if( pc < 04000 ) {
+        pDis += getPC(disBuf+pDis);
+        pDis += sprintf(disBuf+pDis, " %05o %c ", _opc, ex);
+/*        if( pc < 04000 ) {
             // Erasable memory
             blk = pc / 0400;
             if( zpc >= 0 && zpc < 01400 )
@@ -440,9 +481,10 @@ char *CCpu::disasm(int offs, bool bUpdate)
             else
                 pDis += sprintf(disBuf+pDis, "[%02o,%04o] %05o %c ", blk, zpc, _opc, ex);
         }
+        ***/
     }
     if( bEx ) {
-        switch( opc & OPCODE_MASK ) {
+        switch( _opc & OPCODE_MASK ) {
             case 000000: dis0ex(); break;
             case 010000: dis1ex(); break;
             case 020000: dis2ex(); break;
@@ -452,10 +494,10 @@ char *CCpu::disasm(int offs, bool bUpdate)
             case 060000: dis6ex(); break;
             case 070000: dis7ex(); break;
             default:
-                pDis += sprintf(disBuf+pDis, "Unknown extra code %05o!", opc);
+                pDis += sprintf(disBuf+pDis, "Unknown extra code %05o!", _opc);
         }
     } else {
-        switch( opc & OPCODE_MASK ) {
+        switch( _opc & OPCODE_MASK ) {
             case 000000: dis0(); break;
             case 010000: dis1(); break;
             case 020000: dis2(); break;
@@ -465,7 +507,7 @@ char *CCpu::disasm(int offs, bool bUpdate)
             case 060000: dis6(); break;
             case 070000: dis7(); break;
             default:
-                pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", opc);
+                pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", _opc);
         }
     }
     return disBuf;

@@ -60,16 +60,25 @@ void send2dsky(uint16_t addr, uint16_t data)
     if( fdDSKY > 0 && oData != data ) {
         char cmd[16];
         int n = 0;
-        if( addr == 010 )
+        switch( addr ) {
+        case 010:
             n = sprintf(cmd, "#%04X\n", data & 0xFFFF);
-        if( addr == 011 )
+            break;
+        case 011:
             n = sprintf(cmd, "&%04X\n", data & 0xFFFF);
-        if( bFileLogging ) {
-            fprintf(logFile,"Send to DSKY: %5.5s", cmd);
-            fflush(logFile);
+            break;
+        case 013:
+            n = sprintf(cmd, "!%04X\n", data & 0xFFFF);
+            break;
         }
-        write(fdDSKY, cmd, n);
-        oData = data;
+        if( n ) {
+            if( bFileLogging ) {
+                fprintf(logFile,"Send to DSKY: %5.5s\n", cmd);
+                fflush(logFile);
+            }
+            write(fdDSKY, cmd, n);
+            oData = data;
+        }
     }
 }
 

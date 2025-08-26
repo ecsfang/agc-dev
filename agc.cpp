@@ -1,14 +1,28 @@
 #include <stdio.h>
-#include <memory.h>
 #include "cpu.h"
 #include <map>
+#include <iostream>
+#include <signal.h>
+#include <sys/time.h>
+#include <unistd.h>
+#include <ncurses.h>
 
 using namespace std;
 
-#include <ncurses.h>
+volatile int tickCounter = 0; // Variable to increment
+
+// Signal handler for the timer
+void timerHandler(int signum) {
+    tickCounter++; // Increment the variable
+}
+
+// The instance of the AGC CPU
+CCpu    cpu;
 
 FILE    *logFile=NULL;
 bool bFileLogging = false;
+bool bExtraLogging = false;
+extern void dumpLog(void);
 
 extern int dskyInit(void);
 
@@ -373,6 +387,7 @@ WINDOW *myWindow = NULL;
 void stopAgc(void)
 {
     bRunning = false;
+    cpu.run(bRunning);
     nodelay(myWindow, false);
 }
 
@@ -394,8 +409,6 @@ int main(int argc, char *argv[])
     test1st();
 #else
 
-    CCpu    cpu;
-
 //#define MEMORY_TEST
 #ifdef MEMORY_TEST
     doMemTest(cpu.getMem());
@@ -407,6 +420,19 @@ int main(int argc, char *argv[])
     return 0;
 #endif
 
+struct itimerval timer;
+
+    // Set up the timer to expire every 500 microseconds
+    timer.it_value.tv_sec = 0; // Initial delay
+    timer.it_value.tv_usec = 500; // First expiration in 500 microseconds
+    timer.it_interval.tv_sec = 0; // No additional delay
+    timer.it_interval.tv_usec = 500; // Repeat every 500 microseconds
+
+    // Set up the signal handler
+    signal(SIGALRM, timerHandler);
+
+    // Start the timer
+    setitimer(ITIMER_REAL, &timer, NULL);
 
     int n = 0;
     int br;
@@ -432,6 +458,7 @@ int main(int argc, char *argv[])
         cpu.setBrkp(brAddr);
         timeout(-1);
         bRunning = true;
+        cpu.run(bRunning);
         nodelay(myWindow, true);
     }
 
@@ -439,11 +466,15 @@ int main(int argc, char *argv[])
 
     do {
         if( brAddr == cpu.getPC() && key !=  '&' ) {
+            fprintf(logFile,"Break @%05o!\n", cpu.getPC());
+            fflush(logFile);
             stopAgc();
         }
         updateScreen(myWindow, &cpu, bRunning);
 	    key = getch();			/* Wait for user input */
         if( bRunning && key == 'b' ) {
+            fprintf(logFile,"Stopping @%05o!\n", cpu.getPC());
+            fflush(logFile);
             stopAgc();
             cpu.sst();
         }
@@ -465,6 +496,7 @@ int main(int argc, char *argv[])
         case 'r':
             timeout(-1);
             bRunning = true;
+            cpu.run(bRunning);
             nodelay(myWindow, true);
             //halfdelay(1);
             key = '&'; // Mark as running ...
@@ -509,6 +541,10 @@ int main(int argc, char *argv[])
         };
     } while(key != 'q');
 	endwin();			/* End curses mode		  */
+
+    dumpLog();
+    cpu.memDump();
+
 #endif
 	return 0;
 }

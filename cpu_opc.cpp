@@ -36,23 +36,58 @@ int CCpu::op0(void)
     return ret;
 }
 
-uint16_t DABS(uint16_t x)
+int jmp1(__uint16_t k, __uint16_t adr)
 {
-//    fprintf(logFile,"DABS(%05o) -> ", x);
-    if( IS_NEG(x) ) 
-        x = (~x) & 0x7FFF;
-    if( x > 1 ) {
-//        fprintf(logFile,"%05o\n", x);
-        return x-1;
+    __int16_t   opr16;
+    __uint16_t  jmp=0;
+
+    if( adr < REG16 ) {
+        adr &= MASK_16_BITS;
+        opr16 = OverflowCorrected(k);
+    } else {
+        opr16 = k & MASK_15_BITS;
     }
-//    fprintf(logFile,"%05o\n", 0);
-    return 0;
+    if( adr < REG16 && ValueOverflowed(k) == POS_ONE)
+        jmp = 0;
+    else if( adr < REG16 && ValueOverflowed(k) == NEG_ONE)
+        jmp = 2;
+    else if( opr16 == POS_ZERO )
+        jmp = 1;
+    else if( opr16 == NEG_ZERO )
+        jmp = 3;
+    else if( IS_NEG(opr16) )
+        jmp = 2;
+    return jmp;
+}
+int jmp2(__uint16_t k, __uint16_t adr)
+{
+    __int16_t   opr16;
+    __uint16_t  jmp=0;
+
+    if( adr < REG16 ) {
+        adr &= MASK_16_BITS;
+        opr16 = OverflowCorrected(k);
+    } else {
+        opr16 = k & MASK_15_BITS;
+    }
+    if( k > POS_ZERO && IS_POS(k) ) {
+        jmp = 0;
+    } else if( k == POS_ZERO ) {
+        jmp = 1;
+    } else if( (k&MASK_15_BITS) == NEG_ZERO ) {
+        jmp = 3;
+    } else {
+        // Is negative ...
+        jmp = 2;
+    }
+    return jmp;
 }
 
 int CCpu::op1(void)
 {
     int ret = -1;
     __uint16_t  m;
+    __int16_t   opr16;
     __uint16_t  jmp=0;
     switch( qc ) {
     case 00: // CCS
@@ -62,6 +97,47 @@ int CCpu::op1(void)
         // to its absolute value less 1. If (K) = -0, we take the instruction at I + 4, and
         // (A) will be set to + 0. CCS always leaves a positive quantity in A. 
         m = mem.read12(k10);
+        {
+            __uint16_t A1, A2;
+            char pcBuf[16];
+            if( k10 < REG16 ) {
+                m &= MASK_16_BITS;
+                opr16 = OverflowCorrected(m);
+                A1 = DABS16(m);
+            } else {
+                opr16 = m & MASK_15_BITS;
+                A1 = DABS(opr16);
+            }
+            A2 = DABS(m);
+            if( (jmp1(m,k10) != jmp2(m,k10)) || A1 != A2 ) {
+                getPC(pcBuf);
+                if( bFileLogging ) {
+                    fprintf(logFile,"\n%s CCS -> A[%05o]: %05o (%d : %d) A: %05o/%05o\n", pcBuf, k10, m, jmp1(m,k10),jmp2(m,k10), A1, A2);
+                    fflush(logFile);
+                }
+            }
+        }
+#if 1
+        if( k10 < REG16 ) {
+            m &= MASK_16_BITS;
+            opr16 = OverflowCorrected(m);
+            setA( DABS(m) );
+        } else {
+            opr16 = m & MASK_15_BITS;
+            setA( DABS(opr16) );
+        }
+        if( k10 < REG16 && ValueOverflowed(m) == POS_ONE)
+            jmp = 0;
+        else if( k10 < REG16 && ValueOverflowed(m) == NEG_ONE)
+            jmp = 2;
+        else if( opr16 == POS_ZERO )
+            jmp = 1;
+        else if( opr16 == NEG_ZERO )
+            jmp = 3;
+        else if( IS_NEG(opr16) )
+            jmp = 2;
+
+#else
 //        fprintf(logFile,"A: %05o - ", m);
         if( m > POS_ZERO && IS_POS(m) ) {
 //            fprintf(logFile,"> +0");
@@ -78,6 +154,7 @@ int CCpu::op1(void)
             jmp = 2;
         }
         setA( DABS(m) );
+#endif
         nextPC += jmp;
 //        fprintf(logFile," PC: %04o\n", nextPC);
         if( IS_EDIT_REG(k10) )
@@ -98,77 +175,69 @@ int CCpu::op2(void)
     int ret = -1;
     __uint16_t a, l, x1, x2;
     int Lsw, Msw;
+    uint16_t    mr1 = k10-1;
+    uint16_t    mr2 = k10;
     switch( qc ) {
     case 00: //DAS
         // Double Add to Storage
-        a = mem.getA();
-        l = SignExtend(mem.getL());
-        x1 = mem.read12(k10-1);
-        x2 = mem.read12(k10);
+        a = mem.getA() & MASK_16_BITS;
+        l = SignExtend(mem.getL()) & MASK_16_BITS;
+        x1 = mem.read12(mr1) & MASK_16_BITS;
+        x2 = mem.read12(mr2) & MASK_16_BITS;
         // Add (A,L)+(X1,X2) and store at k10,k10+1
         // L = +0, A=(+1, -1 or +0)
+        // Exception
         ret = 0;
 
-        if (k10 == 000001) { // DDOUBL
-            Lsw = AddSP16 (MASK_16_BITS & l, MASK_16_BITS & l);
-            Msw = AddSP16 (a, a);
-            if( bFileLogging ) {
+        Msw = AddSP16 (a, mr1 == REG_A ? a : (mr1 < REG_EB ? x1 : SignExtend(x1)));
+        Lsw = AddSP16 (l, mr2 == REG_L ? l : (mr2 < REG_EB ? x2 : SignExtend(x2)));
+
+        switch( IS_OF(Lsw)) {
+        case POS_OF: Msw = AddSP16(Msw, POS_ONE);             break;
+        case NEG_OF: Msw = AddSP16(Msw, SignExtend(NEG_ONE)); break;
+        }
+        Lsw = OverflowCorrected(Lsw);
+
+        if (mr2 == REG_L) { // DDOUBL (A+L)
+            if( IS_X_LOGGING ) {
                 fprintf(logFile,"DDOUBLE (a: %05o, l: %05o)\n", a, l);
                 fprintf(logFile,"(msw: %05o, lsw: %05o)\n", Msw, Lsw);
             }
-            if ((0140000 & Lsw) == 0040000)
-                Msw = AddSP16 (Msw, POS_ONE);
-            else if ((0140000 & Lsw) == 0100000)
-                Msw = AddSP16 (Msw, SignExtend (NEG_ONE));
-            Lsw = OverflowCorrected (Lsw);
             mem.setA( MASK_16_BITS & Msw );
             mem.setL( MASK_16_BITS & SignExtend (Lsw) );
-            if( bFileLogging )
+
+            if( IS_X_LOGGING )
                 fprintf(logFile,"l = %05o\n", SignExtend (Lsw));
-            break;
-	    }
-        if( bFileLogging )
-            fprintf(logFile,"DAS (a: %05o, l: %05o) + (%05o, %05o) -> [%05o]\n", a, l, x1, x2, k10);
-        if( k10 < REG_EB )
-            Lsw = AddSP16(MASK_16_BITS & l, MASK_16_BITS & x2);
-        else
-            Lsw = AddSP16(MASK_16_BITS & l, SignExtend(x2));
-        if( (k10-1) < REG_EB )
-            Msw = AddSP16(a, MASK_16_BITS & x1);
-        else
-            Msw = AddSP16(a, SignExtend(x1));
+	    } else {
+            if( IS_X_LOGGING ) {
+                fprintf(logFile,"DAS (a: %05o, l: %05o) + (%05o, %05o) -> [%05o]\n", a, l, x1, x2, k10);
+                fprintf(logFile,"(a+x1): %05o, (l+x2): %05o)\n", Msw, Lsw);
+            }
+    /*
+    DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
+    (a+x1): 40002, (l+x2): 37776)
+    (msw: 40002, lsw: 37776)
+    */
 
-        if( bFileLogging )
-            fprintf(logFile,"(a+x1): %05o, (l+x2): %05o)\n", Msw, Lsw);
-/*
-DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
-(a+x1): 40002, (l+x2): 37776)
-(msw: 40002, lsw: 37776)
-*/
-        if ((0140000 & Lsw) == 0040000)
-            Msw = AddSP16(Msw, POS_ONE);
-        else if ((0140000 & Lsw) == 0100000)
-            Msw = AddSP16(Msw, SignExtend(NEG_ONE));
-        Lsw = OverflowCorrected(Lsw);
-        if( bFileLogging )
-            fprintf(logFile,"(msw: %05o, lsw: %05o)\n", Msw, Lsw);
+            if( IS_X_LOGGING )
+                fprintf(logFile,"(msw: %05o, lsw: %05o)\n", Msw, Lsw);
 
-        if ((0140000 & Msw) == 0100000)
-            mem.setA(SignExtend(NEG_ONE));
-        else if ((0140000 & Msw) == 0040000)
-            mem.setA(POS_ONE);
-        else
-            mem.setA(POS_ZERO);
-        mem.setL(POS_ZERO);
-        // Save the results.
-        if( k10 < 3 )
-            mem.write12(k10, SignExtend(Lsw));
-        else
-            mem.write12(k10, Lsw); //SignExtend(Lsw));
-        if( (k10-1) < 3 )
-            mem.write12(k10-1, Msw);
-        else
-            mem.write12(k10-1, OverflowCorrected(Msw));
+            // After the addition, the L register is set to +0, and the A register
+            // is set to +1, -1, or +0, depending on whether there had been positive
+            // overflow, negative overflow, or no overflow during the addition.
+            switch(IS_OF(Msw)) {
+            case POS_OF: mem.setA(POS_ONE);             break;
+            case NEG_OF: mem.setA(SignExtend(NEG_ONE)); break;
+            default:      mem.setA(POS_ZERO);
+            }
+            mem.setL(POS_ZERO);
+
+            // Save the results.
+            // First register
+            mem.write12(mr1, (mr1 < REG16) ? Msw : OverflowCorrected(Msw));
+            // Second register
+            mem.write12(mr2, (mr2 < REG16) ? SignExtend(Lsw) : Lsw);
+        }
         bOF = false;
         mct = 3;
         break;
@@ -188,8 +257,15 @@ DAS (a: 00003, l: 77775) + (37777, 140000) -> [01374]
             a = AddSP16(mem.getA(), mem.read12(k10));
             mem.write12(k10, a);
         } else {
+            if( bFileLogging ) {
+                fprintf(logFile,"A=%06o [%04o]=%06o ", mem.getA(), k10, SignExtend(mem.read12(k10)));
+            }
             a = AddSP16(mem.getA(), SignExtend(mem.read12(k10)));
             mem.write12(k10, OverflowCorrected(a));
+            if( bFileLogging ) {
+                fprintf(logFile,"--> A:%05o : %05o\n", a, mem.read12(k10));
+                fflush(logFile);
+            }
         }
         setA(a);
         ret = 0;
@@ -232,7 +308,6 @@ int CCpu::op4(void)
     return 0;
 }
 
-
 int CCpu::op5(void)
 {
     int ret = -1;
@@ -245,7 +320,6 @@ int CCpu::op5(void)
             a = mem.getA();
             mem.setA(mem.getQ());
             mem.setQ(a);
-//            fprintf(logFile," DXCH Q -> Q:%05o\n", mem.getQ());
             break;
         case REG_L:
             a = mem.getA();
@@ -253,7 +327,6 @@ int CCpu::op5(void)
             mem.setA(mem.getQ());
             mem.setL(a);
             mem.setQ(l);
-//            fprintf(logFile," DXCH L -> L:%05o\n", mem.getQ());
             break;
         default:
             // Upper word
@@ -266,7 +339,6 @@ int CCpu::op5(void)
                 mem.write12(k+1,mem.getL()); //OverflowCorrected(mem.getL()));
                 mem.setL(x);
             }
-//            fprintf(logFile," DXCH %04o -> L:%05o [%05o]\n", k10, mem.getL(), mem.read12(k10));
 
             // Lower word
             if( (k) < REG_EB ) {
@@ -289,7 +361,7 @@ int CCpu::op5(void)
         // TS
         a = mem.getA();
         switch( k10 ) {
-        case REG_A:
+        case REG_A: // OVSK - Overflow Skip
             if( OF() ) {
                 // Overflow - skip one line!
                 nextPC++;
@@ -303,7 +375,6 @@ int CCpu::op5(void)
             break;
         default:
             if( OF() ) {
-//                fprintf(logFile,"TS OF:%d S2:%d (%d)\n", bOF, s2, POS_OVF());
                 setA(SignExtend(POS_OVF() ? POS_ONE : NEG_ONE));
                 nextPC++;
             }

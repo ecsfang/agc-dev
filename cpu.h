@@ -1,14 +1,21 @@
 #ifndef __CPU_H__
 #define __CPU_H__
 
+#include <cstdint>
 #include <ncurses.h>
 #include "memory.h"
+#include <sys/time.h>
 
 extern FILE *logFile;
 extern bool bFileLogging;
+extern bool bExtraLogging;
+#define IS_LOGGING (bFileLogging)
+#define IS_X_LOGGING (bFileLogging&&bExtraLogging)
 
-#define POS_OVF() (bOF && s2 == 0)
-#define NEG_OVF() (bOF && s2 != 0)
+#define LOG_TAB_1   58
+
+#define POS_OVF() (bOF && (s2 == 0))
+#define NEG_OVF() (bOF && (s2 != 0))
 
 typedef enum {
     DSKY_0          = 16,
@@ -54,6 +61,7 @@ class CCpu {
     bool bTime6Enabled = false;
     uint16_t    intRunning = 0;
     __uint16_t  opc;    // The current opcode
+    __uint16_t  _opc;   // The current opcode (15 bits)
     __uint16_t  k12;    // Current 12 bit k value
     __uint16_t  k10;    // Current 10 bit k value
     __uint8_t   qc;     // Current Quarter Code
@@ -73,6 +81,8 @@ class CCpu {
     uint8_t     mct;
     uint32_t    gInterrupt;
     uint16_t    nextPC;
+    struct timeval start, end;
+    bool        bRunning;
 
 public:
     CCpu() {
@@ -88,6 +98,7 @@ public:
         dTime = 0;
         gInterrupt = 0;
 //        mem.init();
+        bRunning = false;
     }
     uint32_t    getClock(void) {
         return clockCnt;
@@ -103,8 +114,11 @@ public:
     void memBreak(uint16_t mw) {
         mwBreak = mw;
     }
+    void memDump(void) {
+        mem.dump();
+    }
     uint16_t ovf_corr(uint16_t ov) {
-        return OF() ? (ov & 0x3FFF) | s2 : ov;
+        return OF() ? (ov & 037777) | s2 : ov;
     }
     void readCore(char *core);
     // Read opcode
@@ -117,36 +131,27 @@ public:
         qc = (opc & QC_MASK) >> 10;
         if( bUpdate )
             idx = 0;
-        return opc;
+        return opc & MASK_15_BITS;
     }
     bool OF(void) {
         return bOF;
     }
     __uint16_t add1st(__uint16_t x1, __uint16_t x2)
     {
-//        s2 = x1 & 040000;
         __uint16_t s = AddSP16(x1,x2);
         __uint16_t cs;
 
-//        fprintf(logFile,"1stADD: s: %05o\n", s);
-
-//        if( s & 0x8000 )
-//            s++;
         bOF |= s2 != (s & S1_MASK);
         cs = s;
-        //printf("(s2:%d s1:%d of:%d)", s2 ? 1:0, (s&0x4000)?1:0, );
         if( bOF ) {
             // Overflow correction
             cs = ovf_corr(cs);
         }
-//        fprintf(logFile,"1stADD: %05o + %05o = %05o %c [%05o] (S2:%d S1:%d)\n", x1, x2, s, bOF?'*':' ', cs, s2&0x4000?1:0, s&0x4000?1:0);
-//        fflush(logFile);
-        return s; // & 0x7FFF;
+        return s;
     }
     void setA(uint16_t a) {
         mem.setA(a);
         s2 = a & S1_MASK;
-        //bOF = false;
     }
     void setL(uint16_t l) {
         mem.setL(l);
@@ -154,6 +159,8 @@ public:
     uint16_t getPC(void) {
         return mem.getZ();
     }
+    uint16_t getPC(char *buf);
+
     uint16_t getAbsPC(void) {
         return mem.getPysZ();
     }
@@ -165,8 +172,18 @@ public:
     CMemory *getMem(void) {
         return &mem;
     }
-
+    bool trace(void) {
+        //if( mem.getPysZ() >= 013424 && mem.getPysZ() <= 013432 )
+        //    return true;
+        return false;
+    }
     int sst(void);
+    void run(bool bRun) {
+        bRunning = bRun;
+    }
+    uint16_t elapsedUS(void);
+
+    char *getTime(void);
 
     int op0(void);
     int op1(void);
@@ -219,12 +236,9 @@ public:
 
     int16_t ValueOverflowed (int Value) {
         switch (Value & (S1_MASK|S2_MASK)) {
-        case S1_MASK:
-            return (POS_ONE);
-        case S2_MASK:
-            return (NEG_ONE);
-        default:
-            return (POS_ZERO);
+        case S1_MASK: return (POS_ONE);
+        case S2_MASK: return (NEG_ONE);
+        default:      return (POS_ZERO);
         }
     }
     // Adds two sign-extended SP values.  The result may contain overflow.
@@ -262,42 +276,39 @@ public:
             // we follow the convention of the DV instruction, in which the
             // overall sign is the sign of the less-significant word.
             Value = SignExtend (Lsb);
-            if (Value & 0100000)
-                Value |= ~0177777;
+            if ( IS_NEG16(Value) )
+                Value |= ~MASK_16_BITS;
             return (07777777777 & Value);	// Eliminate extra sign-ext. bits.
         }
         // If signs of Msb and Lsb words don't match, then make them match.
-        if ((040000 & Lsb) != (040000 & Msb)) {
+        if ((BIT_15 & Lsb) != (BIT_15 & Msb)) {
             if (Lsb == POS_ZERO || Lsb == NEG_ZERO)	{ // Lsb is zero.
                 // Adjust sign of Lsb to match Msb.
-                if (0 == (040000 & Msb))
-                    Lsb = POS_ZERO;
-                else
-                    Lsb = NEG_ZERO;	// 2005-08-17 RSB.  Was "Msb".  Oops!
+                Lsb = IS_POS(Msb) ? POS_ZERO : NEG_ZERO;
             } else {	// Lsb is not zero.
                 // The logic will be easier if the Msb is positive.
-                Complement = (040000 & Msb);
+                Complement = (BIT_15 & Msb);
                 if (Complement) {
-                    Msb = (077777 & ~Msb);
-                    Lsb = (077777 & ~Lsb);
+                    Msb = (MASK_15_BITS & ~Msb);
+                    Lsb = (MASK_15_BITS & ~Lsb);
                 }
                 // We now have Msb positive non-zero and Lsb negative non-zero.
                 // Subtracting 1 from Msb is equivalent to adding 2**14 (i.e.,
                 // 0100000, accounting for the parity) to Lsb.  An additional 1 
                 // must be added to account for the negative overflow.
                 Msb--;
-                Lsb = ((Lsb + 040000 + POS_ONE) & 077777);
+                Lsb = ((Lsb + BIT_15 + POS_ONE) & MASK_15_BITS);
                 // Restore the signs, if necessary.
                 if (Complement) {
-                    Msb = (077777 & ~Msb);
-                    Lsb = (077777 & ~Lsb);
+                    Msb = (MASK_15_BITS & ~Msb);
+                    Lsb = (MASK_15_BITS & ~Lsb);
                 }
             }
         }
         // We now have an Msb and Lsb of the same sign; therefore,
         // we can simply juxtapose them, discarding the sign bit from the 
         // Lsb.  (And recall that the 0-position is still the parity.)
-        Value = (03777740000 & (Msb << 14)) | (037777 & Lsb);
+        Value = (03777740000 & (Msb << 14)) | (MASK_14_BITS & Lsb);
         // Also, sign-extend for further arithmetic.
         if (02000000000 & Value)
             Value |= 04000000000;
@@ -306,8 +317,8 @@ public:
 
     int16_t AbsSP (int16_t Value)
     {
-        if (040000 & Value)
-            return (077777 & ~Value);
+        if (BIT_15 & Value)
+            return (MASK_15_BITS & ~Value);
         return (Value);
     }
 
@@ -315,7 +326,7 @@ public:
 
     int agc2cpu(int Input)
     {
-        if (0 != (S1_MASK & Input))
+        if ( IS_NEG(Input) )
             return (-(MANTISSA_MASK & ~Input));
         else
             return (MANTISSA_MASK & Input);
@@ -324,9 +335,9 @@ public:
     int cpu2agc (int Input)
     {
         if (Input < 0)
-            return (077777 & ~(-Input));
+            return (MASK_15_BITS & ~(-Input));
         else
-            return (077777 & Input);
+            return (MASK_15_BITS & Input);
     }
 
     int agc2cpu2 (int Input)

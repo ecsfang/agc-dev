@@ -3,6 +3,11 @@
 
 extern void stopAgc(void);
 
+typedef uint16_t logsz_t;
+
+static char *pLog[0x10000];
+static logsz_t pLogCnt = 0;
+
 #if 1
 void CCpu::readCore(char *core)
 {
@@ -10,6 +15,7 @@ void CCpu::readCore(char *core)
     char buf[1024];
     int bank = 0;
     __uint16_t  addr;
+    mem.protection(false);
     while(fgets(buf,1024,fp)) {
         if( strncmp("BANK=", buf, 5) == 0 ) {
             sscanf(buf, "BANK=%o", &bank);
@@ -37,6 +43,7 @@ void CCpu::readCore(char *core)
 //            printf("\n");
         }
     }
+    mem.protection(true);
 //#define SELF_TEST
 #ifdef SELF_TEST
     mem.setFB(020 * FIXED_BLK_SIZE);
@@ -110,6 +117,38 @@ void CCpu::readCore(char *core)
 
 //******************************************************************
 
+char *CCpu::getTime(void)
+{
+    static char tBuf[32];
+    uint64_t us = (uint64_t)(clockCnt*11.7);
+    uint16_t usec = us % 1000;
+    uint16_t msec = (us/1000) % 1000;
+    uint32_t s = us/(1000*1000);
+    uint8_t sec = s % 60;
+    uint8_t min = (s/60) % 60;
+    uint8_t h = (s/(60*60));
+    sprintf(tBuf, "%d:%02d:%02d.%03d%03d", h, min, sec, msec, usec);
+    return tBuf;
+}
+
+void dumpLog()
+{
+    logsz_t pb = pLogCnt;
+
+    fprintf(logFile,"\n=======================================");
+    fprintf(logFile,"\n= Saved log ===========================");
+    fprintf(logFile,"\n=======================================\n");
+
+    do {
+        if( pLog[pb] )
+            fprintf(logFile,"%s\n", pLog[pb]);
+        pb++;
+    } while(pb != pLogCnt);
+    fprintf(logFile,"\n= End of saved log ====================\n");
+    fflush(logFile);
+}
+
+extern volatile int tickCounter; // Variable to increment
 
 int CCpu::sst(void)
 {
@@ -119,25 +158,19 @@ int CCpu::sst(void)
     uint16_t    omem = mem.readPys(mwBreak);
     __uint16_t op = getOP();
     bClrExtra = true;
+    int currTick = tickCounter;
+    static int tTick = 0;
 
     static uint32_t clk;
-    {
-        uint64_t us = (uint64_t)(clockCnt*11.7);
-        uint16_t usec = us % 1000;
-        uint16_t msec = (us/1000) % 1000;
-        uint32_t s = us/(1000*1000);
-        uint8_t sec = s % 60;
-        uint8_t min = (s/60) % 60;
-        uint8_t h = (s/(60*60));
+
+    UpdateIMU();
+
+    bOF = ValueOverflowed (mem.getA() & MASK_16_BITS ) != POS_ZERO;
 
 //    ln = sprintf(logBuf, "[%c%5d]%s", bIntRunning ? '*':' ', clk++, disasm(0,false));
 //ln = sprintf(logBuf, "[%c%6.2f]%s", bIntRunning ? '*':' ', clockCnt*(0.0117), disasm(0,false));
-ln = sprintf(logBuf, "[%c%d:%02d:%02d.%03d%03d]%s", bIntRunning ? '*':' ', h, min, sec, msec, usec, disasm(0,false));
-
-    }
-UpdateIMU();
-
-    bOF = ValueOverflowed (mem.getA() & MASK_16_BITS ) != POS_ZERO;
+//ln = sprintf(logBuf, "[%c%d:%02d:%02d.%03d%03d]%s", bIntRunning ? '*':' ', h, min, sec, msec, usec, disasm(0,false));
+    ln = sprintf(logBuf, "[%c%s]%c%s", bIntRunning ? '*':' ', getTime(), bOF ? 'O':' ', disasm(0,false));
 
     // PC is incremented before execution starts!
     nextPC = mem.step();
@@ -174,18 +207,22 @@ UpdateIMU();
         }
     }
     clockCnt += mct;
-    dTime += mct;
+    if( !bRunning ) {
+        dTime += mct*12;
+    }
     dT1600 += mct;
     dT3200 += mct;
 
     __uint16_t r = mem.getA();
-    int nl = 55-ln;
+    int nl = LOG_TAB_1-ln;
     if (nl < 1) nl = 1;
-    ln += sprintf(logBuf+ln,"%*.*s[%d:%05o] ", nl,nl,"A",r & 0100000 ? 1 : 0, r & MASK_15_BITS);
+    // Dump register on the log line
+    ln += sprintf(logBuf+ln,"%*.*s[%d:%05o] ", nl,nl,"A",IS_NEG16(r)?1:0, r & MASK_15_BITS);
     r = mem.getL();
-    ln += sprintf(logBuf+ln,"L[%d:%05o] ", r & 0100000 ? 1 : 0, r & MASK_15_BITS);
+//    ln += sprintf(logBuf+ln,"L[%d:%05o] ", IS_NEG16(r)?1:0, r & MASK_15_BITS);
+    ln += sprintf(logBuf+ln,"L[%05o] ", r & MASK_15_BITS);
     r = mem.getQ();
-    ln += sprintf(logBuf+ln,"Q[%d:%05o] ", r & 0100000 ? 1 : 0, r & MASK_15_BITS);
+    ln += sprintf(logBuf+ln,"Q[%d:%05o] ", IS_NEG16(r)?1:0, r & MASK_15_BITS);
     r = mem.getBB();
     ln += sprintf(logBuf+ln,"BB[%05o] ", r & MASK_15_BITS);
     ln += sprintf(logBuf+ln,"IDX[%05o] ", idx);
@@ -197,13 +234,20 @@ UpdateIMU();
     ln += sprintf(logBuf+ln,"IB[%05o] ", mem.read12(REG_BRUPT));
     ln += sprintf(logBuf+ln,"IBB[%05o] ", mem.read12(REG_BBRUPT));
 #endif
-#if 0
-    fprintf(logFile,"%s\n", logBuf);
-#endif
 
-#define T500US  (43)    // 500us / 11.7us -> 43 cycles
-#define T1_1600 (53)    // 1/1600 / 11.7us -> 53 cycles
-#define T1_3200 (26)    // 1/3200 / 11.7us -> 26 cycles
+    if( trace() || bFileLogging )
+        fprintf(logFile,"%s\n", logBuf);
+
+    if( pLog[pLogCnt] )
+        delete[] pLog[pLogCnt];
+    pLog[pLogCnt] = strdup(logBuf);
+    pLogCnt++;
+
+#define TIME_CORR (4500.0/3589.67)
+//#define T500US  ((int)(43*TIME_CORR)) // 500us / 11.7us -> 43 cycles
+#define T500US  (500) // 500us
+#define T1_1600 ((int)(53*TIME_CORR)) // 1/1600 / 11.7us -> 53 cycles
+#define T1_3200 ((int)(26*TIME_CORR)) // 1/3200 / 11.7us -> 26 cycles
 
     if( dT3200 > T1_3200 ) {
         // 1/3200 seconds has ellapsed
@@ -214,10 +258,18 @@ UpdateIMU();
         dT1600 = 0;
     }
 
-    if( dTime > T500US ) {
+    if( bRunning && tTick != currTick) {
         // 0.5 ms has ellapsed
         incTime();
+        // Reset timer
+        tTick = currTick;
         dTime = 0;
+    } else {
+        if( dTime > T500US ) {
+            // 0.5 ms has ellapsed
+            incTime();
+            dTime = 0;
+        }
     }
 
     mem.setZ(nextPC);
@@ -234,6 +286,19 @@ UpdateIMU();
 }
 
 #define BOOT        04000   // Power-up or GOJ signal.
+
+// Return number of microseconds since 'start'
+uint16_t CCpu::elapsedUS(void)
+{
+    // End time
+    gettimeofday(&end, NULL);
+
+    // Calculate elapsed time in microseconds
+    long seconds = end.tv_sec - start.tv_sec;
+    long microseconds = end.tv_usec - start.tv_usec;
+    long elapsed = seconds * 1000000 + microseconds;
+    return elapsed < 0 ? 0 : (uint16_t)elapsed;
+}
 
 uint16_t CCpu::handleInterrupt(void)
 {
@@ -272,7 +337,7 @@ void CCpu::showInterrupt(void)
         return;
     if( bFileLogging ) {
         int n = 0;
-        fprintf(logFile, "INTERRUPT (%o): ", gInterrupt);
+        fprintf(logFile, "[ %s] INTERRUPT (%o): ", getTime(), gInterrupt);
         IPRT( iBOOT,      "BOOT")
         IPRT( iT6RUPT,    "T6RUPT")
         IPRT( iT5RUPT,    "T5RUPT")
@@ -410,7 +475,7 @@ void CCpu::SimulateDV(uint16_t a, uint16_t l, uint16_t divisor)
           }
     }
     // Restore the proper quotient sign
-    a = quotient_sign | (quotient & 077777);
+    a = quotient_sign | (quotient & MASK_15_BITS);
 
     // The final value for A is negated if the dividend sign and the
     // divisor sign did not match

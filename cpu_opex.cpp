@@ -130,26 +130,28 @@ int CCpu::op1ex(void)
                 // DV modifies A before reading the divisor, so in this
                 // case the divisor is -|A|.
                 Div16 = mem.getA();
-                if ((Div16 & 0100000) == 0)
-                    Div16 = 0177777 & ~Div16;
+                if ((Div16 & BIT_16) == 0)
+                    Div16 = MASK_16_BITS & ~Div16;
                 break;
             case REG_L:
                 // DV modifies L before reading the divisor. L is first
                 // negated if the quotient A,L is negative according to
                 // DV sign rules. Then, 40000 is added to it.
                 Div16 = mem.getL();
-                if (((AbsA == 0) && (0100000 & mem.getL())) || ((AbsA != 0) && (0100000 & mem.getA())))
-                    Div16 = 0177777 & ~Div16;
+                if (((AbsA == 0) && (BIT_16 & mem.getL()))
+                        || ((AbsA != 0) && (BIT_16 & mem.getA())))
+                    Div16 = MASK_16_BITS & ~Div16;
                 // Make sure to account for L's built-in overflow correction
-                Div16 = SignExtend(OverflowCorrected(AddSP16((uint16_t)Div16, 040000)));
+                Div16 = SignExtend(OverflowCorrected(AddSP16((uint16_t)Div16, BIT_15)));
                 break;
             case REG_Z:
                 // DV modifies Z before reading the divisor. If the
                 // quotient A,L is negative according to DV sign rules,
                 // Z16 is set.
                 Div16 = mem.getZ();
-                if (((AbsA == 0) && (0100000 & mem.getZ())) || ((AbsA != 0) && (0100000 & mem.getA())))
-                    Div16 |= 0100000;
+                if (((AbsA == 0) && (BIT_16 & mem.getZ()))
+                        || ((AbsA != 0) && (BIT_16 & mem.getA())))
+                    Div16 |= BIT_16;
                 break;
             case REG_Q:
                 Div16 = mem.getQ();
@@ -177,14 +179,14 @@ int CCpu::op1ex(void)
                 if ((040000 & mem.getL()) == (040000 & OverflowCorrected(Div16)))
                 {
                     if (AbsK == 0)
-                        Operand16 = 037777; // Max positive value.
+                        Operand16 = MASK_14_BITS; // Max positive value.
                     else
                         Operand16 = POS_ZERO;
                 }
                 else
                 {
                     if (AbsK == 0)
-                        Operand16 = (077777 & ~037777); // Max negative value.
+                        Operand16 = (MASK_15_BITS & ~MASK_14_BITS); // Max negative value.
                     else
                         Operand16 = NEG_ZERO;
                 }
@@ -199,7 +201,7 @@ int CCpu::op1ex(void)
                 }
                 else
                 {
-                    Operand16 = (077777 & ~037777); // Max negative value.
+                    Operand16 = (MASK_15_BITS & ~MASK_14_BITS); // Max negative value.
                 }
                 mem.setL(SignExtend(AccPair[0]));
                 mem.setA(SignExtend(Operand16));
@@ -249,7 +251,7 @@ int CCpu::op1ex(void)
         // Check whole word, ie OF is not zero!
         if (mem.getA() == 0 || (mem.getA() & MASK_16_BITS) == MASK_16_BITS)
         {
-            nextPC = k12;
+            nextPC = k12 & MASK_12_BITS;
             mct = 1;
         }
         ret = 0;
@@ -280,13 +282,13 @@ int CCpu::op2ex(void)
 
             if (k10 < REG_EB)
             {
-                ui = 0177777 & mem.getA();
-                uj = 0177777 & ~mem.read12(k10);
+                ui = MASK_16_BITS & mem.getA();
+                uj = MASK_16_BITS & ~mem.read12(k10);
             }
             else
             {
-                ui = (077777 & OverflowCorrected(mem.getA()));
-                uj = (077777 & ~mem.read12(k10));
+                ui = (MASK_15_BITS & OverflowCorrected(mem.getA()));
+                uj = (MASK_15_BITS & ~mem.read12(k10));
             }
             diff = ui + uj + 1; // Two's complement subtraction -- add the complement plus one
             // The AGC sign-extends the result from A15 to A16, then checks A16 to see if
@@ -297,10 +299,10 @@ int CCpu::op2ex(void)
                 diff--;          // Subtract one from the result
             }
             if (k10 == REG_Q)
-                mem.setA(0177777 & diff);
+                mem.setA(MASK_16_BITS & diff);
             else
             {
-                uint16_t Operand16 = (077777 & diff);
+                uint16_t Operand16 = (MASK_15_BITS & diff);
                 mem.setA(SignExtend(Operand16));
             }
             if (IS_EDIT_REG(k10))
