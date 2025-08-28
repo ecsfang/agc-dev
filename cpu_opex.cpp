@@ -343,7 +343,11 @@ int CCpu::op2ex(void)
         else
             x = AddSP16(x, SignExtend(NEG_ONE));
         bOF |= ValueOverflowed(x) != POS_ZERO;
-        mem.write12(k10,bOF ? OverflowCorrected(x) : x);
+        mem.write12(k10,k10 < REG_EB ? x : OverflowCorrected(x));
+        if( bOF && k10 < REG_TIME6 ) {
+            chkInterrupt(k10);
+        }
+        //mem.write12(k10,bOF ? OverflowCorrected(x) : x);
 //        fprintf(logFile,"%c (%05o) %05o\n", bOF ? '*':' ', x, OverflowCorrected(x));
         ret = 0;
         break;
@@ -440,9 +444,9 @@ int CCpu::op5ex(void)
 {
     // INDEX (NDX)
     int ret = -1;
-    idx = mem.read12(k12);
+    index( mem.read12(k12) );
     if( IS_EDIT_REG(k12) )
-        mem.write12(k12,idx);
+        mem.write12(k12,index());
     ret = 0;
     // The INDEX instruction is the only instruction which does not reset the extracode flag!
     bClrExtra = false;

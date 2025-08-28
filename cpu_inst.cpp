@@ -148,64 +148,104 @@ void dumpLog()
     fflush(logFile);
 }
 
-extern volatile int tickCounter; // Variable to increment
+extern volatile uint32_t tickCounter; // Variable to increment
+
+OPX_t opX[] = {
+    &CCpu::op0,
+    &CCpu::op1,
+    &CCpu::op2,
+    &CCpu::op3,
+    &CCpu::op4,
+    &CCpu::op5,
+    &CCpu::op6,
+    &CCpu::op7,
+    &CCpu::op0ex,
+    &CCpu::op1ex,
+    &CCpu::op2ex,
+    &CCpu::op3ex,
+    &CCpu::op4ex,
+    &CCpu::op5ex,
+    &CCpu::op6ex,
+    &CCpu::op7ex
+};
+
+int CCpu::logline(char *buf, int ln)
+{
+    __uint16_t r = mem.getA();
+    int p = 0;
+    int nl = LOG_TAB_1-ln;
+    if (nl < 1) nl = 1;
+    // Dump register on the log line
+    p += sprintf(buf+p,"%*.*s[%d:%05o] ", nl,nl,"A",IS_NEG16(r)?1:0, r & MASK_15_BITS);
+    r = mem.getL();
+    p += sprintf(buf+p,"L[%05o] ", r & MASK_15_BITS);
+    r = mem.getQ();
+    p += sprintf(buf+p,"Q[%d:%05o] ", IS_NEG16(r)?1:0, r & MASK_15_BITS);
+    r = mem.getBB();
+    p += sprintf(buf+p,"BB[%05o] ", r & MASK_15_BITS);
+    p += sprintf(buf+p,"IDX[%05o] ", index());
+#if 0
+    p += sprintf(buf+p,"T3[%05o] ", mem.read12(REG_TIME3));
+    p += sprintf(buf+p,"T4[%05o] ", mem.read12(REG_TIME4));
+    p += sprintf(buf+p,"T5[%05o] ", mem.read12(REG_TIME5));
+#endif
+#if 0
+    p += sprintf(buf+p,"IZ[%05o] ", mem.read12(REG_ZRUPT));
+    p += sprintf(buf+p,"IB[%05o] ", mem.read12(REG_BRUPT));
+    p += sprintf(buf+p,"IBB[%05o] ", mem.read12(REG_BBRUPT));
+#endif
+    return p;
+}
 
 int CCpu::sst(void)
 {
-    int ret = -1;
-    char logBuf[1024];
-    int ln;
-    uint16_t    omem = mem.readPys(mwBreak);
-    __uint16_t op = getOP();
-    bClrExtra = true;
-    int currTick = tickCounter;
-    static int tTick = 0;
+    static char logBuf[1024];
+    static int ln;
+    static uint32_t tTick = 0;
 
-    static uint32_t clk;
+    int ret = -1;
+    uint16_t    omem = mem.readPys(mwBreak);
+    // Get the instruction group code
+    __uint16_t opi = (getOP() & OPCODE_MASK) >> 12;
+    uint32_t currTick = tickCounter;
+
+    // Assume that we will clear the extra code flag
+    bClrExtra = true;
+
+    if( bRunning && tTick != currTick) {
+        // 0.5 ms has ellapsed
+        incTime();
+        // Reset timer
+        tTick++;
+    }
 
     UpdateIMU();
 
-    bOF = ValueOverflowed (mem.getA() & MASK_16_BITS ) != POS_ZERO;
+    // Check if overflow in accumulator A
+    bOF = ValueOverflowed( mem.getA() ) != POS_ZERO;
 
-//    ln = sprintf(logBuf, "[%c%5d]%s", bIntRunning ? '*':' ', clk++, disasm(0,false));
-//ln = sprintf(logBuf, "[%c%6.2f]%s", bIntRunning ? '*':' ', clockCnt*(0.0117), disasm(0,false));
-//ln = sprintf(logBuf, "[%c%d:%02d:%02d.%03d%03d]%s", bIntRunning ? '*':' ', h, min, sec, msec, usec, disasm(0,false));
-    ln = sprintf(logBuf, "[%c%s]%c%s", bIntRunning ? '*':' ', getTime(), bOF ? 'O':' ', disasm(0,false));
+    ln = sprintf(logBuf, "[%c%s]%c", bIntRunning ? '*':' ', getTime(), bOF ? 'O':' ');
+    // Add disassembled instruction to log
+    ln += sprintf(logBuf+ln, "%s", disasm(0,false));
+
+    clrIndex(); // Clear the INDEX value
 
     // PC is incremented before execution starts!
     nextPC = mem.step();
 
     // Assume every instruction takes 2 MCT.
     mct = 2;
+
+    // Execute the instruction
     if( bExtracode ) {
-        switch( op & OPCODE_MASK ) {
-            case 000000: ret = op0ex(); break;
-            case 010000: ret = op1ex(); break;
-            case 020000: ret = op2ex(); break;
-            case 030000: ret = op3ex(); break;
-            case 040000: ret = op4ex(); break;
-            case 050000: ret = op5ex(); break;
-            case 060000: ret = op6ex(); break;
-            case 070000: ret = op7ex(); break;
-//            default:
-//                pDis += sprintf(disBuf+pDis, "Unknown extra code %05o!", op);
-        }
+        ret = (this->*opX[opi|010])();
         if( bClrExtra )
             bExtracode = false;
     } else {
-        switch( op & OPCODE_MASK ) {
-            case 000000: ret = op0(); break;
-            case 010000: ret = op1(); break;
-            case 020000: ret = op2(); break;
-            case 030000: ret = op3(); break;
-            case 040000: ret = op4(); break;
-            case 050000: ret = op5(); break;
-            case 060000: ret = op6(); break;
-            case 070000: ret = op7(); break;
-//            default:
-//                pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", op);
-        }
+        ret = (this->*opX[opi])();
     }
+
+    // Normally clear, but some EX functions retain the flag
     clockCnt += mct;
     if( !bRunning ) {
         dTime += mct*12;
@@ -213,41 +253,16 @@ int CCpu::sst(void)
     dT1600 += mct;
     dT3200 += mct;
 
-    __uint16_t r = mem.getA();
-    int nl = LOG_TAB_1-ln;
-    if (nl < 1) nl = 1;
-    // Dump register on the log line
-    ln += sprintf(logBuf+ln,"%*.*s[%d:%05o] ", nl,nl,"A",IS_NEG16(r)?1:0, r & MASK_15_BITS);
-    r = mem.getL();
-//    ln += sprintf(logBuf+ln,"L[%d:%05o] ", IS_NEG16(r)?1:0, r & MASK_15_BITS);
-    ln += sprintf(logBuf+ln,"L[%05o] ", r & MASK_15_BITS);
-    r = mem.getQ();
-    ln += sprintf(logBuf+ln,"Q[%d:%05o] ", IS_NEG16(r)?1:0, r & MASK_15_BITS);
-    r = mem.getBB();
-    ln += sprintf(logBuf+ln,"BB[%05o] ", r & MASK_15_BITS);
-    ln += sprintf(logBuf+ln,"IDX[%05o] ", idx);
-    ln += sprintf(logBuf+ln,"T3[%05o] ", mem.read12(REG_TIME3));
-    ln += sprintf(logBuf+ln,"T4[%05o] ", mem.read12(REG_TIME4));
-    ln += sprintf(logBuf+ln,"T5[%05o] ", mem.read12(REG_TIME5));
-#if 0
-    ln += sprintf(logBuf+ln,"IZ[%05o] ", mem.read12(REG_ZRUPT));
-    ln += sprintf(logBuf+ln,"IB[%05o] ", mem.read12(REG_BRUPT));
-    ln += sprintf(logBuf+ln,"IBB[%05o] ", mem.read12(REG_BBRUPT));
-#endif
+    ln += logline(logBuf+ln, ln);
 
     if( trace() || bFileLogging )
         fprintf(logFile,"%s\n", logBuf);
 
+    // Save some log for crashes ...
     if( pLog[pLogCnt] )
         delete[] pLog[pLogCnt];
     pLog[pLogCnt] = strdup(logBuf);
     pLogCnt++;
-
-#define TIME_CORR (4500.0/3589.67)
-//#define T500US  ((int)(43*TIME_CORR)) // 500us / 11.7us -> 43 cycles
-#define T500US  (500) // 500us
-#define T1_1600 ((int)(53*TIME_CORR)) // 1/1600 / 11.7us -> 53 cycles
-#define T1_3200 ((int)(26*TIME_CORR)) // 1/3200 / 11.7us -> 26 cycles
 
     if( dT3200 > T1_3200 ) {
         // 1/3200 seconds has ellapsed
@@ -258,13 +273,9 @@ int CCpu::sst(void)
         dT1600 = 0;
     }
 
-    if( bRunning && tTick != currTick) {
-        // 0.5 ms has ellapsed
-        incTime();
-        // Reset timer
-        tTick = currTick;
-        dTime = 0;
-    } else {
+    // While running, the timers are updated in the background
+    // Otherwise update manually ...
+    if( !bRunning ) {
         if( dTime > T500US ) {
             // 0.5 ms has ellapsed
             incTime();
@@ -273,7 +284,14 @@ int CCpu::sst(void)
     }
 
     mem.setZ(nextPC);
-    if( bInterrupt && !bIntRunning && !bExtracode && !idx && !OF() && gInterrupt != 0 ) {
+    // Check if we should hanlde interrupt ...
+    //   bInterrupt  - true if interrupts are enabled
+    //   gInterrupt  - any pending interrupts?
+    //   bIntRunning - true if an interrupt is already running
+    //   bExtracode  - if true then disable interrupt
+    //   index       - no interrupts if index is set
+    //   OF()        - no interrupts if overflow
+    if( bInterrupt && gInterrupt && !bIntRunning && !bExtracode && !index() && !OF() ) {
         nextPC = handleInterrupt();
     }
     if( nextPC )
@@ -359,9 +377,19 @@ void CCpu::addInterrupt(int i)
     showInterrupt();
 }
 
+// If overflow - check for timer registers
+void CCpu::chkInterrupt(uint16_t reg) {
+    switch( reg ) {
+    case REG_TIME1: mem.incTimer(REG_TIME2);    break;
+    case REG_TIME5: addInterrupt(iT5RUPT);      break;
+    case REG_TIME3: addInterrupt(iT3RUPT);      break;
+    case REG_TIME4: addInterrupt(iT4RUPT);      break;
+    }
+}
+
 void CCpu::incTime(void) {
     // Count all 0.5ms
-    static uint32_t ms05 = 0;
+    static int32_t ms05 = 0;
     static uint8_t downrupt = 0;
 
     switch( ms05 % 20 ) {
@@ -378,6 +406,9 @@ void CCpu::incTime(void) {
         if( mem.incTimer(REG_TIME4) )
             addInterrupt(iT4RUPT);
         break;
+    case 19:
+        // Reset counter (so we couunt 0 -> 19 -> 0 ...)
+        ms05 = -1;
     }
     if( downrupt > 42 ) {
         if( bFileLogging )

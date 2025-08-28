@@ -9,15 +9,20 @@
 
 using namespace std;
 
-volatile int tickCounter = 0; // Variable to increment
+// The instance of the AGC CPU
+CCpu    cpu;
+
+static volatile bool bRunning = false;
+
+volatile uint32_t tickCounter = 0; // Variable to increment
 
 // Signal handler for the timer
 void timerHandler(int signum) {
-    tickCounter++; // Increment the variable
+    if( bRunning ) {
+        tickCounter++; // Increment the variable
+        //cpu.incTime();
+    }
 }
-
-// The instance of the AGC CPU
-CCpu    cpu;
 
 FILE    *logFile=NULL;
 bool bFileLogging = false;
@@ -331,22 +336,35 @@ void doDivTest(CCpu *cpu)
 
 map<uint16_t,char*> symTab;
 
+#define DIS_LINES   20
+#define CLK_LINE    (DIS_LINES+6)
+
 void updateScreen(WINDOW *wnd, CCpu *cpu, bool bRun)
 {
+    static bool _bRun = false;
     cpu->updateDSKY(wnd, bRun);
-    if( bRun )
+    if( bRun && (bRun == _bRun) )
         return;
-    cpu->dispReg(wnd);
+    cpu->dispReg(wnd, bRun);
     if( !bRun ) {
+        // Show previous and coming instructions
         for(int n=0; n<5; n++)
-            mvwprintw(wnd,18+n,0,"%s           ", cpu->disasm(n-1));
+            mvwprintw(wnd,DIS_LINES+n,10,"%s           ", cpu->disasm(n-1));
     }
-    mvwprintw(wnd,24,0,"Clk: %5d\n", cpu->getClock());
     map<uint16_t, char*>::iterator it;
     it = symTab.find(cpu->getAbsPC());
-    if( it != symTab.end() )
-        mvwprintw(wnd,25,0,"%05o -> %s\n", it->first, it->second);
+    if( it != symTab.end() ) {
+        if( bRun )
+            mvwprintw(wnd,DIS_LINES+1,0,"          ");
+        else
+            mvwprintw(wnd,DIS_LINES+1,0,"%s ", it->second);
+    }
+    if( bRun )
+        mvwprintw(wnd,CLK_LINE,0,"Clk: -----\n");
+    else
+        mvwprintw(wnd,CLK_LINE,0,"Clk: %5d\n", cpu->getClock());
     refresh();			    /* Print it on to the real screen */
+    _bRun = bRun;
 }
 
 void readSymbols(char *sym)
@@ -381,14 +399,25 @@ void readSymbols(char *sym)
         printf("%05o -> %s\n", it->first, it->second);
     }
 }
-static bool bRunning = false;
+
 WINDOW *myWindow = NULL;
 
+void runAgc(bool bRS)
+{
+    bRunning = bRS;
+    cpu.run(bRunning);
+    nodelay(myWindow, bRunning);
+}
+
+void startAgc(void)
+{
+    runAgc(true);
+    curs_set(0);
+}
 void stopAgc(void)
 {
-    bRunning = false;
-    cpu.run(bRunning);
-    nodelay(myWindow, false);
+    runAgc(false);
+    curs_set(1);
 }
 
 int getOctValue(const char *msg, int row)
@@ -457,9 +486,7 @@ struct itimerval timer;
     if( brAddr != 0 ) {
         cpu.setBrkp(brAddr);
         timeout(-1);
-        bRunning = true;
-        cpu.run(bRunning);
-        nodelay(myWindow, true);
+        runAgc(true);
     }
 
     dskyInit();
@@ -478,8 +505,18 @@ struct itimerval timer;
             stopAgc();
             cpu.sst();
         }
+        if( bRunning && key == 'r' ) {
+            fprintf(logFile,"Stopping @%05o!\n", cpu.getPC());
+            fflush(logFile);
+            stopAgc();
+            cpu.sst();
+            key = '&';
+        }
         if( bRunning  ) {
-            mvwprintw(myWindow,12,0,"Running (%05o)", cpu.getPC());
+            if( (n++ & 0xFFFF) == 0 ) {
+                static uint8_t ww = 0;
+                mvwprintw(myWindow,12,0,"Running (%c)", "-\\|/"[ww++&3]);
+            }
         } else {
             mvwprintw(myWindow,12,0,"                ");
         }
@@ -490,16 +527,17 @@ struct itimerval timer;
                 break;
         case 's': 
             cpu.sst();
+            fflush(logFile);
             break;
         case 'q':
             continue;
         case 'r':
             timeout(-1);
-            bRunning = true;
-            cpu.run(bRunning);
-            nodelay(myWindow, true);
-            //halfdelay(1);
-            key = '&'; // Mark as running ...
+            if( !bRunning ) {
+                startAgc();
+                //halfdelay(1);
+                key = '&'; // Mark as running ...
+            }
             break;
         case 'b':
             brAddr = (uint16_t)getOctValue("Breakpoint address:", 15);

@@ -52,9 +52,9 @@ uint16_t DABS16(uint16_t x)
     return 0;
 }
 
-int16_t ValueOverflowed (int Value)
+int16_t ValueOverflowed (int16_t Word)
 {
-    switch (Value & (S1_MASK|S2_MASK)) {
+    switch (IS_OF(Word)) {
     case S1_MASK:
         return POS_ONE;
     case S2_MASK:
@@ -64,8 +64,15 @@ int16_t ValueOverflowed (int Value)
     }
 }
 
-int16_t OverflowCorrected (int Value)
+// Replace S1 with the S2 bit
+int16_t OverflowCorrected (int16_t Word)
 {
-    return ((Value & MASK_14_BITS) | ((Value >> 1) & S1_MASK));
+    // Overflow correction from 16 to 15 bits
+    return OVF_CORRECTION(Word);
 }
 
+// Sign-extend a 15-bit SP value so that it can go into the 16-bit (plus parity)
+// accumulator.
+int SignExtend (int Word) {
+    return SIGN_EXTEND(Word);
+}

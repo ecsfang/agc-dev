@@ -5,6 +5,11 @@
 #include <cstring>
 #include <assert.h>
 
+// Sign-extend a 15-bit SP value so that it can go into the 16-bit (plus parity)
+#define SIGN_EXTEND(w) ((w & MASK_15_BITS) | ((w << 1) & S2_MASK))
+// Overflow correction from 16 to 15 bits
+#define OVF_CORRECTION(w) ((w & MANTISSA_MASK) | ((w >> 1) & S1_MASK))
+
 extern void send2dsky(__uint16_t addr, __uint16_t data);
 extern bool bFileLogging;
 
@@ -123,8 +128,9 @@ extern bool bFileLogging;
 
 uint16_t DABS(uint16_t x);
 uint16_t DABS16(uint16_t x);
-int16_t ValueOverflowed (int Value);
-int16_t OverflowCorrected (int Value);
+int16_t ValueOverflowed (int16_t Value);
+int16_t OverflowCorrected (int16_t Value);
+int SignExtend (int Word);
 
 /**
 #  ENGINE ON BIT 13 OF CHANNEL 11
@@ -249,6 +255,7 @@ class CMemory {
     Mem_t   mem;
     __uint16_t  inIoMem[IN_IO_SIZE];
     __uint16_t  outIoMem[OUT_IO_SIZE];
+    __uint16_t  outIoMemBkup[OUT_IO_SIZE];
     __uint16_t  FEB;
     bool        bDSky;
     bool        bRestartLight;
@@ -368,8 +375,12 @@ public:
     __uint16_t write12(__uint16_t addr, __uint16_t data) {
         return writePys(addr2mem(addr), data);
     }
+    __uint16_t write12ex(__uint16_t addr, __uint16_t data) {
+        return writePys(addr2mem(addr), addr < REG_EB ? data : OVF_CORRECTION(data));
+    }
     // Write data to a physical address
     __uint16_t writePys(__uint16_t addr, __uint16_t data) {
+        data &= addr < REG16 ? MASK_16_BITS : MASK_15_BITS;
         if( addr < TOTAL_SIZE ) {
           if( addr < ERASABLE_SIZE ) {
             switch( addr ) {
@@ -514,7 +525,7 @@ public:
     __uint16_t  inc(__uint16_t addr) {
         return write12(addr, read12(addr)+1);
     }
-#define SIGN_EXTEND(w) ((w & MASK_15_BITS) | ((w << 1) & S2_MASK))
+
     __uint16_t  readPys(__uint16_t addr) {
         if( addr >= 04000 && addr < 010000 )
             addr += FB_MEM_START;
@@ -530,69 +541,10 @@ public:
     __uint16_t  read12(__uint16_t addr) {
         return readPys(addr2mem(addr));
     }
-#if 0
-    // Map 12 bit address to physical address
-    __uint16_t  addr2mem(__uint16_t addr) {
-        __uint16_t  _addr = 0;
-        if( addr < 01400) {
-            // Unswitched erasable memory
-            _addr = addr;
-        } else if( addr < 02000) {
-            // Switched erasable memory
-            if( mem.EB & ~EB_MASK ) {
-                printf("Invalid EB: %05o!\n", mem.EB);
-                return ERR_ADDR;
-            }
-            _addr = addr-01400 + mem.EB;
-        } else if( addr < 04000) {
-            // Common fixed memory
-            __int16_t   bank = (mem.FB & FB_MASK) >> FB_SHIFT;
-            if( bank > 027 && FEB == 1 )
-                bank += 010;
-            if( bank > 033 ) {
-                printf("Invalid bank: %03o!\n", bank);
-                return ERR_ADDR;
-            }
-            _addr = addr + bank*FIXED_BLK_SIZE + 010000 - 02000;
-        } else if( addr < 010000) {
-            // Unswitched fixed memory
-            _addr = addr;
-        } else {
-            printf("Invalid address: %06o!\n", addr);
-            return ERR_ADDR;
-        }
-        //printf("Addr: %06o -> %06o\n", addr, _addr);
-        return _addr;
+    __uint16_t  read12ex(__uint16_t addr) {
+        return addr < REG_EB ? read12(addr) : SIGN_EXTEND(read12(addr));
+        //return readPys(addr2mem(addr));
     }
-#else
-#if 0
-    // Map 12 bit address to physical address
-    __uint16_t  addr2mem(__uint16_t addr) {
-        __uint16_t  _addr;
-//        __uint8_t   FEB = 0;
-        if( (addr & (BIT_11|BIT_12)) == 00 ) {
-            if( (addr & (BIT_9|BIT_10)) == (BIT_9|BIT_10) ) {
-                // Erasable-switched memory ...
-                return (addr & MASK_8_BITS) | (mem.EB & EB_MASK);
-            } else {
-                // Erasable memory ...
-                return addr & MASK_10_BITS;
-            }
-        }
-        if( (addr & BIT_12) == 0 ) {
-            // Fixed-switched memory
-            _addr = (addr & MASK_10_BITS) | (mem.FB & FB_MASK);
-            if( FEB && (_addr & (BIT_14|BIT_15)) == (BIT_14|BIT_15) ) {
-                return (_addr /*| BIT_16*/) + 2*FB_MEM_START;
-            } else {
-                return _addr + FB_MEM_START;
-            }
-        } else {
-            // Fixed-fixed memory (4000-7777)
-            return addr & MASK_12_BITS;
-        }
-    }
-#else
     // Map 12 bit address to physical address
     __uint16_t  addr2mem(__uint16_t addr) {
         switch( (addr & (BIT_12|BIT_11)) >> 10 ) {
@@ -637,8 +589,6 @@ public:
         // Should never get here ...
         return ERR_ADDR;
     }
-#endif
-#endif
     void init(void);
 };
 

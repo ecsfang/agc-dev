@@ -12,7 +12,7 @@ extern bool bExtraLogging;
 #define IS_LOGGING (bFileLogging)
 #define IS_X_LOGGING (bFileLogging&&bExtraLogging)
 
-#define LOG_TAB_1   58
+#define LOG_TAB_1   73
 
 #define POS_OVF() (bOF && (s2 == 0))
 #define NEG_OVF() (bOF && (s2 != 0))
@@ -52,6 +52,12 @@ typedef enum {
 #define iRADARRUPT  (1<<9)
 #define iRUPT10     (1<<10)
 
+#define TIME_CORR (4500.0/3589.67)
+// These values are used while singlestepping ...
+#define T500US  ((int)(43*TIME_CORR)) // 500us / 11.7us -> 43 cycles
+#define T1_1600 ((int)(53*TIME_CORR)) // 1/1600 / 11.7us -> 53 cycles
+#define T1_3200 ((int)(26*TIME_CORR)) // 1/3200 / 11.7us -> 26 cycles
+
 class CCpu {
     CMemory mem;
     bool bExtracode = false;
@@ -65,8 +71,7 @@ class CCpu {
     __uint16_t  k12;    // Current 12 bit k value
     __uint16_t  k10;    // Current 10 bit k value
     __uint8_t   qc;     // Current Quarter Code
-    __uint16_t  idx;    // Current index-value
-    __uint16_t  useIdx;
+    __uint16_t  m_idx;  // Current index-value
     bool        bOF;
     __uint16_t  s2;     // The 16th bit ...
     char        disBuf[256];
@@ -90,7 +95,7 @@ public:
 //        mem.write12(04000, 012345);
 //        mem.read12(04000);
         mem.setZ(BOOT);
-        idx = 0;
+        clrIndex();
         bOF = false;
         memset(bps,0,TOTAL_SIZE*sizeof(bool));
         mwAddr = 0;
@@ -121,17 +126,26 @@ public:
         return OF() ? (ov & 037777) | s2 : ov;
     }
     void readCore(char *core);
-    // Read opcode
-    __uint16_t getOP(bool bUpdate=true, int offs=0) {
+    // Read opcode at offset
+    // If bUpdate is true, update opc by INDEX etc
+    __uint16_t getOP(int offs=0) {
         opc = mem.getOP(offs) & MASK_15_BITS;
-        if( bUpdate )
-            opc  = AddSP16(SignExtend(opc), SignExtend(idx)); //+= idx;
+        if( !offs && m_idx ) {
+            opc  = AddSP16(SignExtend(opc), SignExtend(m_idx));
+        }
         k12 = opc & MASK_12B_ADDRESS;
         k10 = opc & MASK_10B_ADDRESS;
         qc = (opc & QC_MASK) >> 10;
-        if( bUpdate )
-            idx = 0;
         return opc & MASK_15_BITS;
+    }
+    void index(int idx) {
+        m_idx = idx;
+    }
+    int index(void) {
+        return m_idx;
+    }
+    void clrIndex(void) {
+        m_idx = 0;
     }
     bool OF(void) {
         return bOF;
@@ -139,19 +153,21 @@ public:
     __uint16_t add1st(__uint16_t x1, __uint16_t x2)
     {
         __uint16_t s = AddSP16(x1,x2);
-        __uint16_t cs;
+//        __uint16_t cs;
 
+        s2 = (s & S2_MASK)>>1;
         bOF |= s2 != (s & S1_MASK);
-        cs = s;
-        if( bOF ) {
-            // Overflow correction
-            cs = ovf_corr(cs);
-        }
+//        cs = s;
+//        if( bOF ) {
+//            // Overflow correction
+//            cs = ovf_corr(cs);
+//        }
         return s;
     }
     void setA(uint16_t a) {
         mem.setA(a);
-        s2 = a & S1_MASK;
+//        s2 = a & S1_MASK;
+        s2 = (a & S2_MASK)>>1;
     }
     void setL(uint16_t l) {
         mem.setL(l);
@@ -168,7 +184,7 @@ public:
         return mem.setZ(pc);
     }
     char *mAddr(uint16_t a);
-
+    const char *getLabel(void);
     CMemory *getMem(void) {
         return &mem;
     }
@@ -181,6 +197,8 @@ public:
     void run(bool bRun) {
         bRunning = bRun;
     }
+    int logline(char *buf, int ln);
+
     uint16_t elapsedUS(void);
 
     char *getTime(void);
@@ -221,26 +239,20 @@ public:
     void dis6ex(void);
     void dis7ex(void);
 
-    void dispReg(WINDOW *win);
+    void dispReg(WINDOW *win, bool bRun);
     void updateDSKY(WINDOW *win, bool bRun);
 
-    int16_t OverflowCorrected (int Value) {
-        return ((Value & MANTISSA_MASK) | ((Value >> 1) & S1_MASK));
-    }
+//    int16_t OverflowCorrected (int Value) {
+//        return ((Value & MANTISSA_MASK) | ((Value >> 1) & S1_MASK));
+//    }
 
-    // Sign-extend a 15-bit SP value so that it can go into the 16-bit (plus parity)
-    // accumulator.
-    int SignExtend (int16_t Word) {
-        return ((Word & MASK_15_BITS) | ((Word << 1) & S2_MASK));
-    }
-
-    int16_t ValueOverflowed (int Value) {
-        switch (Value & (S1_MASK|S2_MASK)) {
+/*    int16_t ValueOverflowed (int Value) {
+        switch (IS_OF(Value)) {
         case S1_MASK: return (POS_ONE);
         case S2_MASK: return (NEG_ONE);
         default:      return (POS_ZERO);
         }
-    }
+    }**/
     // Adds two sign-extended SP values.  The result may contain overflow.
     uint16_t AddSP16 (uint32_t Addend1, uint32_t Addend2) {
         uint32_t Sum;
@@ -368,6 +380,7 @@ public:
     void showInterrupt(void);
     void addInterrupt(int i);
     uint16_t handleInterrupt(void);
+    void chkInterrupt(uint16_t reg);
     void incTime(void);
     void incTIME1(void);
     void divTest(uint16_t a, uint16_t l, uint16_t q) {
@@ -385,5 +398,7 @@ public:
     void keyPress(Key_e key);
 };
 
+typedef  int  (CCpu::*OPX_t)(void);  // Please do this!
+typedef  void (CCpu::*DISX_t)(void);  // Please do this!
 
 #endif//__CPU_H__

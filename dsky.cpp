@@ -156,10 +156,11 @@ void void CCpu::UpdateDSKY(agc_t *State)
 
 void CCpu::updateDSKY(WINDOW *win, bool bRun)
 {
+    // Check is dsky has been updated
     if( bRun && !mem.dsky() )
         return;
 
-    if( bFileLogging )
+    if( bExtraLogging )
         fprintf(logFile,"Update DSKY!\n");
 
     static DSP_t dsp;
