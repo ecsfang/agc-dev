@@ -33,7 +33,7 @@ int CCpu::BurstOutput(int DriveBitMask, int CounterRegister, int Channel)
     }
     // The count may be negative.  If so, normalize to be positive and set the
     // direction flag.
-    Direction = (040000 & DriveCount);
+    Direction = (S1_MASK & DriveCount);
     if (Direction)
     {
         DriveCount ^= 077777;
@@ -44,7 +44,7 @@ int CCpu::BurstOutput(int DriveBitMask, int CounterRegister, int Channel)
     if (DriveCountSaved < 0)
     {
         DriveCountSaved = -DriveCountSaved;
-        Direction = 040000;
+        Direction = S1_MASK;
     }
     else
         Direction = 0;

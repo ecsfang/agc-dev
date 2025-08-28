@@ -176,7 +176,7 @@ int CCpu::op1ex(void)
             {
                 // The dividend is 0 but the divisor is not. The standard DV sign
                 // convention applies to A, and L remains unchanged.
-                if ((040000 & mem.getL()) == (040000 & OverflowCorrected(Div16)))
+                if ((S1_MASK & mem.getL()) == (S1_MASK & OverflowCorrected(Div16)))
                 {
                     if (AbsK == 0)
                         Operand16 = MASK_14_BITS; // Max positive value.
@@ -280,7 +280,7 @@ int CCpu::op2ex(void)
             unsigned ui, uj;
             int diff;
 
-            if (k10 < REG_EB)
+            if (k10 < REG16)
             {
                 ui = MASK_16_BITS & mem.getA();
                 uj = MASK_16_BITS & ~mem.read12(k10);
@@ -320,48 +320,37 @@ int CCpu::op2ex(void)
             mem.setQ(POS_ZERO);
             break;
         default:
-            if( k10 < REG_EB ) {
-                q = mem.getQ();
-                mem.setQ(mem.read12(k10));
-                mem.write12(k10, q);
-                if( k10 == REG_Z )
-                    nextPC = mem.getZ();
-            } else {
-	            q = OverflowCorrected (mem.getQ());
-	            mem.setQ(SignExtend (mem.read12(k10)));
-	            mem.write12(k10,q);
-    	    }
+            q = mem.getQ();
+            mem.setQ(mem.read12ex(k10));
+            mem.write12ex(k10, q);
+            if( k10 == REG_Z )
+                nextPC = mem.getZ();
         }
         ret = 0;
         break;
     case 02:
         // AUG
-        x = SignExtend(mem.read12(k10));
-//        fprintf(logFile," AUG: %05o --> ", x);
+        x = mem.read12ex(k10);
         if( IS_POS(x) )
             x = AddSP16(x, POS_ONE);
         else
             x = AddSP16(x, SignExtend(NEG_ONE));
         bOF |= ValueOverflowed(x) != POS_ZERO;
-        mem.write12(k10,k10 < REG_EB ? x : OverflowCorrected(x));
+        mem.write12ex(k10,x);
         if( bOF && k10 < REG_TIME6 ) {
             chkInterrupt(k10);
         }
-        //mem.write12(k10,bOF ? OverflowCorrected(x) : x);
-//        fprintf(logFile,"%c (%05o) %05o\n", bOF ? '*':' ', x, OverflowCorrected(x));
         ret = 0;
         break;
     case 03:
         // DIM
-        x = SignExtend(mem.read12(k10));
-//        fprintf(logFile,"DIM: %05o --> ", x);
+        x = mem.read12ex(k10);
         if( IS_POS(x) && x != POS_ZERO )
             x = AddSP16(x, SignExtend(NEG_ONE));
         else if( IS_NEG(x) && (x&MASK_15_BITS) != NEG_ZERO )
             x = AddSP16(x, POS_ONE);
-//        fprintf(logFile,"%05o [%05o]\n", x, OverflowCorrected(x));
         bOF |= ValueOverflowed(x) != POS_ZERO;
-        mem.write12(k10,k10 < REG_EB ? x : OverflowCorrected(x));
+        mem.write12ex(k10,x);
         break;
     }
     return ret;
@@ -463,7 +452,7 @@ int CCpu::op6ex(void)
     case 00: // SU
         if (k10 == REG_A)
             mem.setA(SignExtend(NEG_ZERO));
-        else {//if (k10 < REG_EB)
+        else {//if (k10 < REG16)
             mem.setA(AddSP16(mem.getA(), MASK_16_BITS & ~mem.read12(k10)));
             if (IS_EDIT_REG(k10))
                 mem.update(k10); // Update (k)!
@@ -497,7 +486,7 @@ int CCpu::op7ex(void)
 	  int Product;
 	  //WhereWord = FindMemoryWord (State, Address12);
 	  int16_t Operand16 = OverflowCorrected (mem.getA());
-	  if (k12 < REG_EB)
+	  if (k12 < REG16)
 	    OtherOperand16 = OverflowCorrected (mem.read12(k12));
 	  else
 	    OtherOperand16 = mem.read12(k12);
@@ -505,8 +494,8 @@ int CCpu::op7ex(void)
 	    MsWord = LsWord = POS_ZERO;
 	  else if (Operand16 == POS_ZERO || Operand16 == NEG_ZERO)
 	    {
-	      if ((Operand16 == POS_ZERO && 0 != (040000 & OtherOperand16)) ||
-		  (Operand16 == NEG_ZERO && 0 == (040000 & OtherOperand16)))
+	      if ((Operand16 == POS_ZERO && 0 != (S1_MASK & OtherOperand16)) ||
+		  (Operand16 == NEG_ZERO && 0 == (S1_MASK & OtherOperand16)))
 	      MsWord = LsWord = NEG_ZERO;
 	      else
 	      MsWord = LsWord = POS_ZERO;
@@ -515,8 +504,8 @@ int CCpu::op7ex(void)
 	    {
 	      int16_t WordPair[2];
 	      Product =
-	      agc2cpu (SignExtend (Operand16)) *
-	      agc2cpu (SignExtend (OtherOperand16));
+	            agc2cpu (SignExtend (Operand16)) *
+	            agc2cpu (SignExtend (OtherOperand16));
 	      Product = cpu2agc2 (Product);
 	      // Sign-extend, because it's needed for DecentToSp.
 	      if (02000000000 & Product)
