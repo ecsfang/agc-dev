@@ -184,7 +184,7 @@ public:
         return mem.setZ(pc);
     }
     char *mAddr(uint16_t a);
-    const char *getLabel(void);
+    const char *getLabel(uint16_t addr);
     CMemory *getMem(void) {
         return &mem;
     }

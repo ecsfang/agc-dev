@@ -150,23 +150,9 @@ void dumpLog()
 
 extern volatile uint32_t tickCounter; // Variable to increment
 
-OPX_t opX[] = {
-    &CCpu::op0,
-    &CCpu::op1,
-    &CCpu::op2,
-    &CCpu::op3,
-    &CCpu::op4,
-    &CCpu::op5,
-    &CCpu::op6,
-    &CCpu::op7,
-    &CCpu::op0ex,
-    &CCpu::op1ex,
-    &CCpu::op2ex,
-    &CCpu::op3ex,
-    &CCpu::op4ex,
-    &CCpu::op5ex,
-    &CCpu::op6ex,
-    &CCpu::op7ex
+const OPX_t opX[] = {
+    &CCpu::op0,    &CCpu::op1,    &CCpu::op2,    &CCpu::op3,    &CCpu::op4,    &CCpu::op5,    &CCpu::op6,    &CCpu::op7,
+    &CCpu::op0ex,  &CCpu::op1ex,  &CCpu::op2ex,  &CCpu::op3ex,  &CCpu::op4ex,  &CCpu::op5ex,  &CCpu::op6ex,  &CCpu::op7ex
 };
 
 int CCpu::logline(char *buf, int ln)

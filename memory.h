@@ -376,7 +376,7 @@ public:
         return writePys(addr2mem(addr), data);
     }
     __uint16_t write12ex(__uint16_t addr, __uint16_t data) {
-        return writePys(addr2mem(addr), addr < REG_EB ? data : OVF_CORRECTION(data));
+        return writePys(addr2mem(addr), addr < REG16 ? data : OVF_CORRECTION(data));
     }
     // Write data to a physical address
     __uint16_t writePys(__uint16_t addr, __uint16_t data) {
@@ -542,7 +542,7 @@ public:
         return readPys(addr2mem(addr));
     }
     __uint16_t  read12ex(__uint16_t addr) {
-        return addr < REG_EB ? read12(addr) : SIGN_EXTEND(read12(addr));
+        return addr < REG16 ? read12(addr) : SIGN_EXTEND(read12(addr));
         //return readPys(addr2mem(addr));
     }
     // Map 12 bit address to physical address

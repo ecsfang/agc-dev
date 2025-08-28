@@ -24,6 +24,7 @@ int CCpu::op0(void)
     return 0;
 }
 
+/*** Test code
 int jmp1(__uint16_t k, __uint16_t adr)
 {
     __int16_t   opr16;
@@ -70,6 +71,7 @@ int jmp2(__uint16_t k, __uint16_t adr)
     }
     return jmp;
 }
+*******************************************/
 
 int CCpu::op1(void)
 {
@@ -87,8 +89,8 @@ int CCpu::op1(void)
         m = mem.read12(k10);
         if( k10 < REG16 ) {
             m &= MASK_16_BITS;
-            opr16 = OverflowCorrected(m);
-            setA( DABS(m) );
+            opr16 = m; //OverflowCorrected(m);
+            setA( DABS16(m) );
         } else {
             opr16 = m & MASK_15_BITS;
             setA( DABS(opr16) );
@@ -125,7 +127,7 @@ int CCpu::op2(void)
     int Lsw, Msw;
     uint16_t    mr1 = k10-1;
     uint16_t    mr2 = k10;
-    uint16_t k = k10 < REG_EB ? mem.read12(k10) : SignExtend(mem.read12(k10));
+    uint16_t k = mem.read12ex(k10); //k10 < REG_EB ? mem.read12(k10) : SignExtend(mem.read12(k10));
     switch( qc ) {
     case 00: //DAS
         // Double Add to Storage
@@ -164,7 +166,6 @@ int CCpu::op2(void)
             // First register
             mem.write12ex(mr1, Msw);
             // Second register
-            //mem.write12(mr2, (mr2 < REG16) ? SignExtend(Lsw) : Lsw);
             mem.write12ex(mr2, Lsw);
         }
         bOF = false;
@@ -189,12 +190,8 @@ int CCpu::op2(void)
         x1 = mem.read12ex(k10);
         x1 = AddSP16(POS_ONE, 0177777 & x1);
         mem.write12ex(k10, x1);
-        if( k10 < REG_EB ) {
-            //mem.write12(k10,AddSP16(POS_ONE, 0177777 & k));
-        } else {
-            //x1 = AddSP16(POS_ONE, k);
+        if( k10 >= REG16 ) {
             bOF |= ValueOverflowed(x1) != POS_ZERO;
-            //mem.write12(k10, OverflowCorrected(x1));
             if( bOF && k10 < REG_TIME6 ) {
                 chkInterrupt(k10);
             }
@@ -203,9 +200,6 @@ int CCpu::op2(void)
         break;
     case 03: // ADS
         a = add1st(mem.getA(), k);
-        //if( k10 >= REG_EB ) {
-        //    a = OverflowCorrected(a);
-        //}
         mem.write12ex(k10, a);
         setA(a);
         ret = 0;
@@ -275,11 +269,7 @@ int CCpu::op5(void)
 
             // Lower word
             x = mem.read12ex(k);
-            if( (k) < REG_EB ) {
-                mem.write12(k,mem.getA());
-            } else {
-                mem.write12(k,OverflowCorrected(mem.getA()));
-            }
+            mem.write12ex(k, mem.getA());
             mem.setA(x);
             if( k == REG_Z || (k+1) == REG_Z )
                 nextPC = mem.getZ();
@@ -368,7 +358,7 @@ int CCpu::op7(void)
     __uint16_t m = mem.read12ex(k12);
 
     // MASK
-    if( k12 < REG_EB ) {
+    if( k12 < REG16 ) {
         setA( mem.getA() & m );
     } else {
         __uint16_t a = OverflowCorrected(mem.getA());

@@ -19,8 +19,8 @@ volatile uint32_t tickCounter = 0; // Variable to increment
 // Signal handler for the timer
 void timerHandler(int signum) {
     if( bRunning ) {
-        tickCounter++; // Increment the variable
-        //cpu.incTime();
+        // Update counter every 0.5 ms
+        tickCounter++;
     }
 }
 
@@ -351,13 +351,15 @@ void updateScreen(WINDOW *wnd, CCpu *cpu, bool bRun)
         for(int n=0; n<5; n++)
             mvwprintw(wnd,DIS_LINES+n,10,"%s           ", cpu->disasm(n-1));
     }
-    map<uint16_t, char*>::iterator it;
-    it = symTab.find(cpu->getAbsPC());
-    if( it != symTab.end() ) {
+    const char *lbl = cpu->getLabel(cpu->getAbsPC());
+    //map<uint16_t, char*>::iterator it;
+    //it = symTab.find(cpu->getAbsPC());
+    //if( it != symTab.end() ) {
+    if( lbl ) {
         if( bRun )
             mvwprintw(wnd,DIS_LINES+1,0,"          ");
         else
-            mvwprintw(wnd,DIS_LINES+1,0,"%s ", it->second);
+            mvwprintw(wnd,DIS_LINES+1,0,"%s ", lbl ); //it->second);
     }
     if( bRun )
         mvwprintw(wnd,CLK_LINE,0,"Clk: -----\n");

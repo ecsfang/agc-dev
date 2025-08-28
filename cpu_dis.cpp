@@ -47,23 +47,27 @@ extern map<uint16_t,char*> symTab;
 
 char *CCpu::mAddr(uint16_t a)
 {
-    char *lbl = NULL;
-    map<uint16_t, char*>::iterator it;
-    it = symTab.find(mem.addr2mem(a));
-    if( it != symTab.end() )
-        lbl = it->second;
-
+    const char *reg = "ALQ**Z";
     static char addr[128];
     switch(a) {
-    case 00000: sprintf(addr, "A"); break;
-    case 00001: sprintf(addr, "L"); break;
-    case 00002: sprintf(addr, "Q"); break;
-    case 00005: sprintf(addr, "Z"); break;
+    case 00000:
+    case 00001:
+    case 00002:
+    case 00005:
+        sprintf(addr, "%c", reg[a]);
+        break;
     default:
-        if( lbl )
-            sprintf(addr, "%04o [%s]", a, lbl);
-        else
-            sprintf(addr, "%04o", a);
+        {
+            const char *lbl = getLabel(mem.addr2mem(a));
+//            map<uint16_t, char*>::iterator it;
+//            it = symTab.find(mem.addr2mem(a));
+//            if( it != symTab.end() ) {
+//                lbl = it->second;
+            if( lbl )
+                sprintf(addr, "%04o [%s]", a, lbl);
+            else
+                sprintf(addr, "%04o", a);
+        }
     }
     return addr;
 }
@@ -223,20 +227,6 @@ void CCpu::dis2ex(void)
     case 02: op = "AUG";  break;
     case 03: op = "DIM";  break;
     }
-/*    switch( qc ) {
-        case 00:
-            pDis += sprintf(disBuf+pDis, "MSU");
-            break;
-        case 01:
-            pDis += sprintf(disBuf+pDis, "QXCH");
-            break;
-        case 02:
-            pDis += sprintf(disBuf+pDis, "AUG");
-            break;
-        case 03:
-            pDis += sprintf(disBuf+pDis, "DIM");
-            break;
-        }*/
     pDis += sprintf(disBuf+pDis, "%-*.*s %s", DIS_TAB, DIS_TAB, op, mAddr(k10));
 }
 
@@ -283,27 +273,22 @@ void CCpu::dis7ex(void)
 
 void CCpu::dis0(void)
 {
+    const char *dis0m[8] = {
+        "XXALQ", "XLQ/TL", "RETURN", "RELINT", "INHINT", "?", "EXTEND", "TC"
+    };
     switch(_opc) {
     case 000000:
-        pDis += sprintf(disBuf+pDis, "XXALQ");
-        break;
     case 000002:
-        pDis += sprintf(disBuf+pDis, "RETURN");
-        break;
     case 000003:
-        pDis += sprintf(disBuf+pDis, "RELINT");
-        break;
     case 000004:
-        pDis += sprintf(disBuf+pDis, "INHINT");
-        break;
     case 000006:
-        pDis += sprintf(disBuf+pDis, "EXTEND");
+        pDis += sprintf(disBuf+pDis, "%s", dis0m[_opc]);
         break;
     case 000001:
-        pDis += sprintf(disBuf+pDis, "%-*.*s %s", DIS_TAB, DIS_TAB, "XLQ/TC", mAddr(k12));
+        pDis += sprintf(disBuf+pDis, "%-*.*s %s", DIS_TAB, DIS_TAB, dis0m[1], mAddr(k12));
         break;
     default:
-        pDis += sprintf(disBuf+pDis, "%-*.*s %s", DIS_TAB, DIS_TAB, "TC", mAddr(k12));
+        pDis += sprintf(disBuf+pDis, "%-*.*s %s", DIS_TAB, DIS_TAB, dis0m[7], mAddr(k12));
     }
 }
 
@@ -327,26 +312,14 @@ void CCpu::dis1(void)
 
 void CCpu::dis2(void)
 {
-    switch( qc ) {
-    case 00:
-        // Double Add to Storage
-        if( k10 == 000001 )
-            pDis += sprintf(disBuf+pDis, "DDOUBLE");
-        else
-            pDis += sprintf(disBuf+pDis, "%-*.*s %s", DIS_TAB, DIS_TAB, "DAS", mAddr(k10));
-        break;
-    case 01:
-        pDis += sprintf(disBuf+pDis, "%-*.*s %s", DIS_TAB, DIS_TAB, "LXCH", mAddr(k10));
-        break;
-    case 02:
-        pDis += sprintf(disBuf+pDis, "%-*.*s %s", DIS_TAB, DIS_TAB, "INCR", mAddr(k10));
-        break;
-    case 03:
-        pDis += sprintf(disBuf+pDis, "%-*.*s %s", DIS_TAB, DIS_TAB, "ADS", mAddr(k10));
-        break;
-    default:
-        pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", _opc);
-    }
+    const char *dis2m[5] = {
+        "DAS", "LXCH", "INCR", "ABS", "DDOUBLE"
+    };
+
+    if( qc == 00 && k10 == 000001)
+        pDis += sprintf(disBuf+pDis, "%s", dis2m[4]);
+    else
+        pDis += sprintf(disBuf+pDis, "%-*.*s %s", DIS_TAB, DIS_TAB, dis2m[qc], mAddr(k10));
 }
 
 void CCpu::dis3(void)
@@ -459,33 +432,19 @@ uint16_t CCpu::getPC(char *buf)
     return 0;
 }
 
-DISX_t disX[] = {
-    &CCpu::dis0,
-    &CCpu::dis1,
-    &CCpu::dis2,
-    &CCpu::dis3,
-    &CCpu::dis4,
-    &CCpu::dis5,
-    &CCpu::dis6,
-    &CCpu::dis7,
-    &CCpu::dis0ex,
-    &CCpu::dis1ex,
-    &CCpu::dis2ex,
-    &CCpu::dis3ex,
-    &CCpu::dis4ex,
-    &CCpu::dis5ex,
-    &CCpu::dis6ex,
-    &CCpu::dis7ex
+const DISX_t disX[] = {
+    &CCpu::dis0,    &CCpu::dis1,    &CCpu::dis2,    &CCpu::dis3,    &CCpu::dis4,    &CCpu::dis5,    &CCpu::dis6,    &CCpu::dis7,
+    &CCpu::dis0ex,  &CCpu::dis1ex,  &CCpu::dis2ex,  &CCpu::dis3ex,  &CCpu::dis4ex,  &CCpu::dis5ex,  &CCpu::dis6ex,  &CCpu::dis7ex
 };
 
-const char *CCpu::getLabel()
+const char *CCpu::getLabel(uint16_t addr)
 {
     map<uint16_t, char*>::iterator it;
-    it = symTab.find(getAbsPC());
+    it = symTab.find(addr);
     if( it != symTab.end() )
         return it->second;
     else
-        return "";
+        return NULL;
 }
 
 char *CCpu::disasm(int offs, bool bUpdate)
@@ -518,43 +477,17 @@ if( offs ) {
         pDis += sprintf(disBuf+pDis, " %05o %c ", _opc, ex);
 #else
         char ex = bEx ? '+':' ';
+        const char *lbl = getLabel(getAbsPC());
         pDis += getPC(disBuf+pDis);
         pDis += sprintf(disBuf+pDis, " %05o%c", _opc, ex);
-        pDis += sprintf(disBuf+pDis, " %-*.*s ", 8, 8, getLabel());
+        pDis += sprintf(disBuf+pDis, " %-*.*s ", 8, 8, lbl ? lbl : "");
 #endif
     }
+    // Get the disassembled instruction
     if( bEx ) {
         (this->*disX[opi|010])();
     } else {
         (this->*disX[opi])();
     }
-/*
-    if( bEx ) {
-        switch( _opc & OPCODE_MASK ) {
-            case 000000: dis0ex(); break;
-            case 010000: dis1ex(); break;
-            case 020000: dis2ex(); break;
-            case 030000: dis3ex(); break;
-            case 040000: dis4ex(); break;
-            case 050000: dis5ex(); break;
-            case 060000: dis6ex(); break;
-            case 070000: dis7ex(); break;
-            default:
-                pDis += sprintf(disBuf+pDis, "Unknown extra code %05o!", _opc);
-        }
-    } else {
-        switch( _opc & OPCODE_MASK ) {
-            case 000000: dis0(); break;
-            case 010000: dis1(); break;
-            case 020000: dis2(); break;
-            case 030000: dis3(); break;
-            case 040000: dis4(); break;
-            case 050000: dis5(); break;
-            case 060000: dis6(); break;
-            case 070000: dis7(); break;
-            default:
-                pDis += sprintf(disBuf+pDis, "Unknown opcode %05o!", _opc);
-        }
-    }*/
     return disBuf;
 }
