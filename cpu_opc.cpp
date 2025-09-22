@@ -24,60 +24,11 @@ int CCpu::op0(void)
     return 0;
 }
 
-/*** Test code
-int jmp1(__uint16_t k, __uint16_t adr)
-{
-    __int16_t   opr16;
-    __uint16_t  jmp=0;
-
-    if( adr < REG16 ) {
-        adr &= MASK_16_BITS;
-        opr16 = OverflowCorrected(k);
-    } else {
-        opr16 = k & MASK_15_BITS;
-    }
-    if( adr < REG16 && ValueOverflowed(k) == POS_ONE)
-        jmp = 0;
-    else if( adr < REG16 && ValueOverflowed(k) == NEG_ONE)
-        jmp = 2;
-    else if( opr16 == POS_ZERO )
-        jmp = 1;
-    else if( opr16 == NEG_ZERO )
-        jmp = 3;
-    else if( IS_NEG(opr16) )
-        jmp = 2;
-    return jmp;
-}
-int jmp2(__uint16_t k, __uint16_t adr)
-{
-    __int16_t   opr16;
-    __uint16_t  jmp=0;
-
-    if( adr < REG16 ) {
-        adr &= MASK_16_BITS;
-        opr16 = OverflowCorrected(k);
-    } else {
-        opr16 = k & MASK_15_BITS;
-    }
-    if( k > POS_ZERO && IS_POS(k) ) {
-        jmp = 0;
-    } else if( k == POS_ZERO ) {
-        jmp = 1;
-    } else if( (k&MASK_15_BITS) == NEG_ZERO ) {
-        jmp = 3;
-    } else {
-        // Is negative ...
-        jmp = 2;
-    }
-    return jmp;
-}
-*******************************************/
-
 int CCpu::op1(void)
 {
     int ret = -1;
     __uint16_t  m;
-    __int16_t   opr16;
+    __uint16_t  opr16;
     __uint16_t  jmp=0;
     switch( qc ) {
     case 00: // CCS
@@ -89,26 +40,36 @@ int CCpu::op1(void)
         m = mem.read12(k10);
         if( k10 < REG16 ) {
             m &= MASK_16_BITS;
-            opr16 = m; //OverflowCorrected(m);
+            opr16 = OverflowCorrected(m);
             setA( DABS16(m) );
         } else {
             opr16 = m & MASK_15_BITS;
             setA( DABS(opr16) );
         }
-        if( k10 < REG16 && ValueOverflowed(m) == POS_ONE)
+        if( k10 < REG16 && ValueOverflowed(m) == POS_ONE) {
+            // Positive overflow ...
             jmp = 0;
-        else if( k10 < REG16 && ValueOverflowed(m) == NEG_ONE)
+        } else if( k10 < REG16 && ValueOverflowed(m) == NEG_ONE) {
+            // Negative overflow ...
             jmp = 2;
-        else if( opr16 == POS_ZERO )
+        } else if( opr16 == POS_ZERO ) {
+            // Positive zero ...
             jmp = 1;
-        else if( opr16 == NEG_ZERO )
+        } else if( opr16 == NEG_ZERO ) {
+            // Negative zero ...
             jmp = 3;
-        else if( IS_NEG(opr16) )
+        } else if( IS_NEG(opr16) ) {
+            // Negative value ...
             jmp = 2;
+        } else {
+            // Positive value ...
+            jmp = 0;
+        }
 
         nextPC += jmp;
         if( IS_EDIT_REG(k10) )
             mem.update(k10); // Update (k)!
+        fflush(logFile);
         break;
     default: // TCF
         // The "Transfer Control to Fixed" instruction jumps to a
@@ -191,7 +152,7 @@ int CCpu::op2(void)
         x1 = AddSP16(POS_ONE, 0177777 & x1);
         mem.write12ex(k10, x1);
         if( k10 >= REG16 ) {
-            bOF |= ValueOverflowed(x1) != POS_ZERO;
+            bOF |= IsValueOverflowed(x1);
             if( bOF && k10 < REG_TIME6 ) {
                 chkInterrupt(k10);
             }
@@ -248,15 +209,14 @@ int CCpu::op5(void)
     k = k10 - 1;
     switch( qc ) {
     case 01: // DXCH swap [k-1,k] and [a,l]
+        a = mem.getA();
+        l = mem.getL();
         switch( k ) {
         case REG_Q:
-            a = mem.getA();
             mem.setA(mem.getQ());
             mem.setQ(a);
             break;
         case REG_L:
-            a = mem.getA();
-            l = mem.getL();
             mem.setA(mem.getQ());
             mem.setL(a);
             mem.setQ(l);
@@ -264,12 +224,12 @@ int CCpu::op5(void)
         default:
             // Upper word
             x = mem.read12ex(k+1);
-            mem.write12ex(k+1,mem.getL());
+            mem.write12ex(k+1, l);
             mem.setL(x);
 
             // Lower word
             x = mem.read12ex(k);
-            mem.write12ex(k, mem.getA());
+            mem.write12ex(k, a);
             mem.setA(x);
             if( k == REG_Z || (k+1) == REG_Z )
                 nextPC = mem.getZ();
@@ -278,8 +238,7 @@ int CCpu::op5(void)
         ret = 0;
         mct = 3;
         break;
-    case 02:
-        // TS
+    case 02: // TS
         a = mem.getA();
         switch( k10 ) {
         case REG_A: // OVSK - Overflow Skip
@@ -291,26 +250,30 @@ int CCpu::op5(void)
         case REG_Z: // Special case ... TCAA
             if( OF() ) {
                 setA(SignExtend(POS_OVF() ? POS_ONE : NEG_ONE));
-            }
-            nextPC = ovf_corr(a);
+                nextPC = OVF_CORRECTION(a);
+            } else
+                nextPC = a;
             break;
         default:
             if( OF() ) {
                 setA(SignExtend(POS_OVF() ? POS_ONE : NEG_ONE));
+                mem.write12(k10, OVF_CORRECTION(a));
                 nextPC++;
-            }
-            mem.write12(k10, ovf_corr(a));
+            } else
+                mem.write12(k10, a);
         }
         bOF = false;
         ret = 0;
         break;
-    case 03:    // XCH
+    case 03:
+        // XCH
+        // The "Exchange A and K" instruction exchanges the value
+        // in the A register with a value stored in erasable memory.
         if( k10 == REG_A )
             break;
         a = mem.getA();
-        x = mem.read12ex(k10);
-        mem.setA(x);
-        mem.write12ex(k10,a); //k10 < REG_EB ? a : ovf_corr(a));
+        mem.setA( mem.read12ex(k10) );
+        mem.write12ex( k10, a );
         if( k10 == REG_Z )
             nextPC = a;
         ret = 0;
@@ -318,16 +281,19 @@ int CCpu::op5(void)
     case 00:
         if( k12 == 00017 ) {
             // RESUME
+            // Resume Interrupted Program.
             nextPC = mem.read12(REG_ZRUPT);
-            bIntRunning = false;
-            intRunning = 0;
+            clrInterrupt();
         } else {
             // INDEX
+            // The "Index Next Instruction" or "Index Extracode Instruction"
+            // instruction causes the next instruction to be executed in
+            // a modified way from its actual representation in memory.
             index( mem.read12(k10) );
             // A side-effect of this instruction is that K is rewritten after its value is interrogated;
             // this means that if K is CYR, SR, CYL, or EDOP, then it is re-edited.
-            if( IS_EDIT_REG(k12) )
-                mem.write12(k10,index());
+            if( IS_EDIT_REG(k10) )
+                mem.update(k10);
         }
         ret = 0;
         break;
@@ -340,30 +306,30 @@ int CCpu::op5(void)
 
 int CCpu::op6(void)
 {
-    int ret = -1;
-    __uint16_t m = mem.read12ex(k12);
-    
-    // AD - add and update overflow
-    mem.setA(add1st(mem.getA(), m));
+    // AD
+    // The "Add" instruction adds the contents
+    // of a memory location into the accumulator.
+    mem.setA(add1st(mem.getA(), mem.read12ex(k12)));
     
     if( IS_EDIT_REG(k12) )
         mem.update(k12); // Update (K)!
-    ret = 0;
-    return ret;
+
+    return 0;
 }
 
 int CCpu::op7(void)
 {
-    int ret = -1;
     __uint16_t m = mem.read12ex(k12);
+    __uint16_t a = mem.getA();
 
     // MASK
+    // The "Mask A by K" instruction logically ANDs the contents
+    // of a memory location bitwise into the accumulator.
     if( k12 < REG16 ) {
-        setA( mem.getA() & m );
+        setA( a & m );
     } else {
-        __uint16_t a = OverflowCorrected(mem.getA());
-        setA( SignExtend(a & m) );
+        setA( SignExtend(OverflowCorrected(a) & m) );
 	}
-    ret = 0;
-    return ret;
+    // Note: CYR, SR, CYL, or EDOP are unchanged
+    return 0;
 }

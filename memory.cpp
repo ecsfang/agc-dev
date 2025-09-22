@@ -55,15 +55,17 @@ uint16_t DABS16(uint16_t x)
 int16_t ValueOverflowed (int16_t Word)
 {
     switch (IS_OF(Word)) {
-    case S1_MASK:
-        return POS_ONE;
-    case S2_MASK:
-        return NEG_ONE;
-    default:
-        return POS_ZERO;
+    case POS_OF: return POS_ONE;
+    case NEG_OF: return NEG_ONE;
     }
+    return POS_ZERO;
+}
+bool IsValueOverflowed(int16_t word)
+{
+    return ValueOverflowed(word) != POS_ZERO;
 }
 
+#if 0
 // Replace S1 with the S2 bit
 int16_t OverflowCorrected (int16_t Word)
 {
@@ -76,3 +78,4 @@ int16_t OverflowCorrected (int16_t Word)
 int SignExtend (int Word) {
     return SIGN_EXTEND(Word);
 }
+#endif

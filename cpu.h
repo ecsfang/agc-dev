@@ -6,6 +6,25 @@
 #include "memory.h"
 #include <sys/time.h>
 
+#define NAN (051515)
+#define REA (015151)
+
+// Struct used for selftest
+typedef struct {
+    uint16_t op;        // Instruction to test
+    uint16_t pc;        // The instruction address to use
+    uint16_t regA;      // The value of register A
+    uint16_t regL;      // The value of register L
+    uint16_t regQ;      // The value of register Q
+    //---------------------------------------
+    uint16_t offs;      // The expected PC increment
+    uint16_t resA;      // The expetced result in A
+    uint16_t resL;      // The expetced result in L
+    uint16_t resQ;      // The expetced result in Q
+    uint16_t resOf;     // The expected overflow
+} TestPattern_t;
+
+
 extern FILE *logFile;
 extern bool bFileLogging;
 extern bool bExtraLogging;
@@ -40,18 +59,18 @@ typedef enum {
 } Key_e;
 
 #define NR_INTS     11
-#define iBOOT       (1<<0)
-#define iT6RUPT     (1<<1)
-#define iT5RUPT     (1<<2)
-#define iT3RUPT     (1<<3)
-#define iT4RUPT     (1<<4)
-#define iKEYRUPT1   (1<<5)
-#define iKEYRUPT2   (1<<6)
-#define iUPRUPT     (1<<7)
-#define iDOWNRUPT   (1<<8)
-#define iRADARRUPT  (1<<9)
-#define iRUPT10     (1<<10)
-
+#define IRUPT(i) (1<<i)
+#define iBOOT       IRUPT(0)
+#define iT6RUPT     IRUPT(1)
+#define iT5RUPT     IRUPT(2)
+#define iT3RUPT     IRUPT(3)
+#define iT4RUPT     IRUPT(4)
+#define iKEYRUPT1   IRUPT(5)
+#define iKEYRUPT2   IRUPT(6)
+#define iUPRUPT     IRUPT(7)
+#define iDOWNRUPT   IRUPT(8)
+#define iRADARRUPT  IRUPT(9)
+#define iRUPT10     IRUPT(10)
 #define TIME_CORR (4500.0/3589.67)
 // These values are used while singlestepping ...
 #define T500US  ((int)(43*TIME_CORR)) // 500us / 11.7us -> 43 cycles
@@ -150,24 +169,29 @@ public:
     bool OF(void) {
         return bOF;
     }
+    // Add two integers and set s2 and overflow flag
     __uint16_t add1st(__uint16_t x1, __uint16_t x2)
     {
         __uint16_t s = AddSP16(x1,x2);
-//        __uint16_t cs;
-
-        s2 = (s & S2_MASK)>>1;
-        bOF |= s2 != (s & S1_MASK);
-//        cs = s;
-//        if( bOF ) {
-//            // Overflow correction
-//            cs = ovf_corr(cs);
-//        }
+        setOF(s);
         return s;
+    }
+    void setOF(__uint16_t r){
+        s2 = (r & S2_MASK)>>1;
+        bOF |= IsValueOverflowed(r); // != (r & S1_MASK);
     }
     void setA(uint16_t a) {
         mem.setA(a);
-//        s2 = a & S1_MASK;
         s2 = (a & S2_MASK)>>1;
+    }
+    uint16_t getA(void) {
+        return mem.getA();
+    }
+    uint16_t getL(void) {
+        return mem.getL();
+    }
+    uint16_t getQ(void) {
+        return mem.getQ();
     }
     void setL(uint16_t l) {
         mem.setL(l);
@@ -197,6 +221,8 @@ public:
     void run(bool bRun) {
         bRunning = bRun;
     }
+    uint16_t testOp(int x, uint16_t op, uint16_t pc, uint16_t a=0);
+    uint16_t testOp(int x, TestPattern_t *pTst);
     int logline(char *buf, int ln);
 
     uint16_t elapsedUS(void);
@@ -242,17 +268,6 @@ public:
     void dispReg(WINDOW *win, bool bRun);
     void updateDSKY(WINDOW *win, bool bRun);
 
-//    int16_t OverflowCorrected (int Value) {
-//        return ((Value & MANTISSA_MASK) | ((Value >> 1) & S1_MASK));
-//    }
-
-/*    int16_t ValueOverflowed (int Value) {
-        switch (IS_OF(Value)) {
-        case S1_MASK: return (POS_ONE);
-        case S2_MASK: return (NEG_ONE);
-        default:      return (POS_ZERO);
-        }
-    }**/
     // Adds two sign-extended SP values.  The result may contain overflow.
     uint16_t AddSP16 (uint32_t Addend1, uint32_t Addend2) {
         uint32_t Sum;
@@ -370,9 +385,8 @@ public:
 
     void DecentToSp(int Decent, int16_t *LsbSP)
     {
-        int Sign;
-        Sign = (Decent & 04000000000);
-        *LsbSP = (MANTISSA_MASK & Decent);
+        int Sign = (Decent & 04000000000);
+        *LsbSP = MANTISSA_MASK & Decent;
         if (Sign)
             *LsbSP |= S1_MASK;
         LsbSP[-1] = OverflowCorrected(MASK_16_BITS & (Decent >> 14)); // Was 13.
@@ -381,6 +395,16 @@ public:
     void addInterrupt(int i);
     uint16_t handleInterrupt(void);
     void chkInterrupt(uint16_t reg);
+    void setInterrupt(uint16_t ipc, uint16_t i) {
+        bIntRunning = true;
+        intRunning = ipc;
+        // Clear the interrupt flag (handled) ...
+        gInterrupt &= ~IRUPT(i);
+    }
+    void clrInterrupt(void) {
+        bIntRunning = false;
+        intRunning = 0;
+    }
     void incTime(void);
     void incTIME1(void);
     void divTest(uint16_t a, uint16_t l, uint16_t q) {
@@ -389,9 +413,9 @@ public:
         mem.setQ(SignExtend(q));
         k10 = REG_Q;
         qc = 0;
-        printf("A: %05o L: %05o D: %05o ", mem.getA(), mem.getL(), mem.getQ());
+        printf("A: %06o L: %06o D: %06o ", mem.getA(), mem.getL(), mem.getQ());
         op1ex();
-        printf("==> A: %05o L: %05o\n", mem.getA(), mem.getL());
+        printf("==> A: %06o L: %06o\n", mem.getA(), mem.getL());
     }
     int BurstOutput (int DriveBitMask, int CounterRegister, int Channel);
     void UpdateIMU(void);

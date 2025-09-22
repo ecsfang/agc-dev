@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "cpu.h"
+#include "cpu.h"
 
 extern void stopAgc(void);
 
@@ -13,48 +14,52 @@ void CCpu::readCore(char *core)
 {
     FILE *fp = fopen(core,"r");
     char buf[1024];
-    int bank = 0;
+    int bank = -1;
     __uint16_t  addr;
+    // Make fixed bank writable
     mem.protection(false);
     while(fgets(buf,1024,fp)) {
         if( strncmp("BANK=", buf, 5) == 0 ) {
+            // Start of a new bank ...
             sscanf(buf, "BANK=%o", &bank);
-//            addr = 010000 + bank * FIXED_BLK_SIZE;
-            addr = 02000;
+            addr = 02000; // Start address of every fixed bank
             fprintf(logFile, "BANK=%o [%06o]\n", bank, addr);
             if( bank >= 040 ) {
+                // Superbank 40-43 are 30-33 with FEB = 1
                 bank -= 010;
                 mem.setFEB(1);
-            } else
+            } else {
+                // Bank 00-37 with FEB = 0
                 mem.setFEB(0);
+            }
             mem.setFB(bank << FB_SHIFT);
         }
         if( buf[0] >= '0' && buf[0] < '8') {
+            // Data for the current bank ...
             char *p = buf;
             unsigned int word;
             p = strtok(buf, ", ");
             while( p && sscanf(p, "%o", &word) == 1 ) {
-//                fprintf(logFile, "%02o,%04o [%06o] : %05o\n", bank, addr-(010000 + bank * FIXED_BLK_SIZE), addr, word);
-                fprintf(logFile, "%02o,%04o [%06o] : %05o\n", bank, addr, mem.addr2mem(addr), word);
-                p = strtok(NULL, ", "); //+= 6;
-                mem.writePys(mem.addr2mem(addr), word);
-                addr++;
+                if( bExtraLogging )
+                    fprintf(logFile, "%02o,%04o [%06o] : %05o\n", bank, addr, mem.addr2mem(addr), word);
+                mem.write12(addr++, word);
+                p = strtok(NULL, ", ");
             }
-//            printf("\n");
         }
     }
+    // Make fixed bank only readable
     mem.protection(true);
 //#define SELF_TEST
 #ifdef SELF_TEST
-    mem.setFB(020 * FIXED_BLK_SIZE);
-    mem.setZ(02070);
+    mem.setPC(043,03363);
 #else
-    mem.setEB(6<<EB_SHIFT);
-    mem.write12(01510, 0777); // FAILSW # IF POSITIVE NO RCSMONIT, OTHERWISE 0
+    // FAILSW # IF POSITIVE NO RCSMONIT, OTHERWISE 0
+    mem.write12(01510, 0777);
+    // Reset PC to boot entry ...
     mem.setEB(0);
-    mem.setFB(0); //020 * FIXED_BLK_SIZE);
+    mem.setFB(0);
     mem.setFEB(0);
-    mem.setZ(BOOT); //02070);
+    mem.setZ(BOOT);
 #endif
     fprintf(logFile, "Start: [%06o](%06o) : %05o\n", mem.getZ(), mem.addr2mem(mem.getZ()), mem.getOP());
     fclose(fp);
@@ -183,6 +188,57 @@ int CCpu::logline(char *buf, int ln)
     return p;
 }
 
+uint16_t CCpu::testOp(int x, TestPattern_t *pTst) {
+    return testOp(x, pTst->op, pTst->pc, pTst->regA);
+}
+
+uint16_t CCpu::testOp(int x, uint16_t op, uint16_t pc, uint16_t a)
+{
+    static char logBuf[1024];
+    static int ln;
+    __uint16_t opi = (op & OPCODE_MASK) >> 12;
+    nextPC = pc;
+    mem.setZ(nextPC);
+    mem.setA(a);
+    setOF(a);
+    mem.setFB(2 << FB_SHIFT);
+    mem.setFEB(0);
+
+    mem.protection(false);
+
+    mem.writePys(pc+FB_MEM_START, op);
+
+    ln = sprintf(logBuf,"\n[Test %03d]", x);
+    ln += logline(logBuf+ln, 32+ln-1);
+    fprintf(logFile,"%s", logBuf);
+    fprintf(logFile,"PC[%05o] ", nextPC);
+    int16_t of = ValueOverflowed(getA());
+    if( of )
+        fprintf(logFile,"OF:%c", of == POS_ONE?'+':' ');
+    else
+        fprintf(logFile,"OF:");
+    fprintf(logFile,"\n");
+
+    // Add disassembled instruction to log
+    ln = sprintf(logBuf, "%s", disasm(0,false));
+
+    int ret = (this->*opX[opi])();
+    ln += logline(logBuf+ln, ln+32);
+
+    nextPC++;
+
+    fprintf(logFile,"%s", logBuf);
+    fprintf(logFile,"PC[%05o] ", nextPC);
+    of = ValueOverflowed(getA());
+    if( of )
+        fprintf(logFile,"OF:%c\n", of == POS_ONE?'+':' ');
+    else
+        fprintf(logFile,"OF:\n");
+    fflush(logFile);
+
+    return nextPC;
+}
+
 int CCpu::sst(void)
 {
     static char logBuf[1024];
@@ -208,7 +264,7 @@ int CCpu::sst(void)
     UpdateIMU();
 
     // Check if overflow in accumulator A
-    bOF = ValueOverflowed( mem.getA() ) != POS_ZERO;
+    bOF = IsValueOverflowed( mem.getA() );
 
     ln = sprintf(logBuf, "[%c%s]%c", bIntRunning ? '*':' ', getTime(), bOF ? 'O':' ');
     // Add disassembled instruction to log
@@ -313,16 +369,13 @@ uint16_t CCpu::handleInterrupt(void)
     mem.write12(REG_BRUPT, mem.getOP());
     for(int i=0; i<NR_INTS;i++) {
         // Is interrupt flag set ?
-        if( gInterrupt & (1<<i) ) {
+        if( gInterrupt & IRUPT(i) ) {
             uint16_t iPc = BOOT + i*4;
             nextPC = iPc;
             if( bFileLogging )
-                fprintf(logFile,"Stop and continue @ %05o\n", nextPC);
-            bIntRunning = true;
-            intRunning = iPc;
-            //stopAgc();
-            // Clear the interrupt flag ...
-            gInterrupt &= ~(1<<i);
+                fprintf(logFile,"Interrupt and continue @ %05o\n", nextPC);
+            // Init the interrupt ...
+            setInterrupt(iPc, i);
             return nextPC;
         }
     }

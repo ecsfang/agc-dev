@@ -6,6 +6,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <ncurses.h>
+#include "argh.h"
+#include "testing.h"
 
 using namespace std;
 
@@ -31,308 +33,6 @@ extern void dumpLog(void);
 
 extern int dskyInit(void);
 
-//#define DO_TEST
-#ifdef DO_TEST
-void prtBin(__uint16_t x)
-{
-    for(int b=14; b>=0; b--) {
-        fprintf(logFile, "%c", x & (1<<b) ? '1' : '0');
-    }
-}
-void prt1st(__uint16_t x)
-{
-    bool bNeg = (x&0x4000) ? true : false;
-    __uint16_t d = x & 0x7FFF;
-
-    if( bNeg )
-        d = ((~x) & 0x7FFF);
-    fprintf(logFile, "%05o (%d ", x & 0x7FFF, x & 0x8000 ? 1 : 0); prtBin(x);
-    fprintf(logFile, ") [%c", bNeg ? '-' : '+');
-    fprintf(logFile, "%5d]", d);
-}
-
-void testAdd(__uint16_t x1, __uint16_t x2)
-{
-    CCpu    tst;
-    bool of;
-    fprintf(logFile, "\n  "); prt1st(x1);
-    fprintf(logFile, ")\n  "); prt1st(x2);
-    fprintf(logFile, ")\n-------------------------------\n+ "); prt1st(tst.add1st(x1,x2));
-    if( of )
-        fprintf(logFile, "Overflow!");
-    fprintf(logFile, "\n");
-}
-
-double btof(uint16_t x1, uint16_t x2)
-{
-    double r = 0.0;
-    bool bNeg = false;
-    double n = 0.5;
-    if( IS_NEG(x1) ) {
-        bNeg = true;
-        x1 = (~x1) & 0x7FFF;
-    }
-    for(int b=13; b>=0; b--) {
-        if( (x1>>b)&1 )
-            r += n;
-        n /= 2;
-    }
-    if( bNeg )
-        r = -r;
-
-    bNeg = false;
-    if( IS_NEG(x2) ) {
-        bNeg = true;
-        x2 = (~x2) & 0x7FFF;
-    }
-    for(int b=13; b>=0; b--) {
-        if( (x2>>b)&1 )
-            r += bNeg ? -n : n;
-        n /= 2;
-    }
-
-    return r;
-}
-
-uint16_t ftob(double f, uint16_t *remain)
-{
-    uint16_t r1 = 0;
-    uint16_t r2 = 0;
-    double of = f;
-    double rf;
-    bool bNeg = false;
-    if( f < 0){
-        bNeg = true;
-        f = -f;
-    }
-    for(int n=0; n<14; n++) {
-        r1 <<= 1;
-        f = f*2;
-        if( f>=1.0 ) {
-            r1 |= 1;
-            f -= 1.0;
-        }
-    }
-    for(int n=0; n<14; n++) {
-        r2 <<= 1;
-        f = f*2;
-        if( f>=1.0 ) {
-            r2 |= 1;
-            f -= 1.0;
-        }
-    }
-    if( bNeg ) {
-        r1 = (~r1) & 0x7FFF;
-        r2 = (~r2) & 0x7FFF;
-    }
-    *remain = r2;
-    return r1;
- }
-
-void testDiv(__uint16_t x1, __uint16_t x2, uint16_t k)
-{
-    CCpu    tst;
-    bool of;
-    double f = btof(x1, x2);
-    double div = btof(k, 0);
-    fprintf(logFile, "\n  %05o %05o -> %lf", x1, x2, f);
-    fprintf(logFile, "\n        %05o -> %lf", k, div);
-    double quo = f / div;
-    uint16_t r1, r2;
-    r1 = ftob(quo, &r2);
-//    x2 = div - (x1*k);
-    fprintf(logFile, "\n---------------------\n/ %05o %05o -> %lf", r1, r2, quo);
-    fprintf(logFile, "\n");
-}
-
-//----------------------------------------------------------------------------
-// This function implements a model of what happens in the actual AGC hardware
-// during a divide -- but made a bit more readable / software-centric than the 
-// actual register transfer level stuff. It should nevertheless give accurate
-// results in all cases, including those that result in "total nonsense".
-// If A, L, or Z are the divisor, it assumes that the unexpected transformations
-// have already been applied to the "divisor" argument.
-static void
-SimulateDV(uint16_t a, uint16_t l, uint16_t divisor)
-{
-    uint16_t dividend_sign = 0;
-    uint16_t divisor_sign = 0;
-    uint16_t remainder;
-    uint16_t remainder_sign = 0;
-    uint16_t quotient_sign = 0;
-    uint16_t quotient = 0;
-    uint16_t sum = 0;
-    int i;
-
-    // Assume A contains the sign of the dividend
-    dividend_sign = a & 0100000;
-
-    // Negate A if it was positive
-    if (!dividend_sign)
-      a = ~a;
-    // If A is now -0, take the dividend sign from L
-    if (a == 0177777)
-      dividend_sign = l & 0100000;
-    // Negate L if the dividend is negative.
-    if (dividend_sign)
-      l = ~l;
-
-    // Add 40000 to L
-    l = AddSP16(l, 040000);
-    // If this did not cause positive overflow, add one to A
-    if (ValueOverflowed(l) != POS_ONE)
-      a = AddSP16(a, 1);
-    // Initialize the remainder with the current value of A
-    remainder = a;
-
-    // Record the sign of the divisor, and then take its absolute value
-    divisor_sign = divisor & 0100000;
-    if (divisor_sign)
-      divisor = ~divisor;
-    // Initialize the quotient via a WYD on L (L's sign is placed in bits
-    // 16 and 1, and L bits 14-1 are placed in bits 15-2).
-    quotient_sign = l & 0100000;
-    quotient = quotient_sign | ((l & 037777) << 1) | (quotient_sign >> 15);
-
-    for (i = 0; i < 14; i++)
-    {
-        // Shift up the quotient
-        quotient <<= 1;
-        // Perform a WYD on the remainder
-        remainder_sign = remainder & 0100000;
-        remainder = remainder_sign | ((remainder & 037777) << 1);
-        // The sign is only placed in bit 1 if the quotient's new bit 16 is 1
-        if ((quotient & 0100000) == 0)
-          remainder |= (remainder_sign >> 15);
-        // Add the divisor to the remainder
-        sum = AddSP16(remainder, divisor);
-        if (sum & 0100000)
-          {
-            // If the resulting sum has its bit 16 set, OR a 1 onto the
-            // quotient and take the sum as the new remainder
-            quotient |= 1;
-            remainder = sum;
-          }
-    }
-    // Restore the proper quotient sign
-    a = quotient_sign | (quotient & 077777);
-
-    // The final value for A is negated if the dividend sign and the
-    // divisor sign did not match
-    uint16_t ra = (dividend_sign != divisor_sign) ? ~a : a;
-    // The final value for L is negated if the dividend was negative
-    uint16_t rl = (dividend_sign) ? remainder : ~remainder;
-
-    double f = btof(a, l);
-    double div = btof(divisor, 0);
-    fprintf(logFile, "\n  %05o %05o -> %lf", a, l, f);
-    fprintf(logFile, "\n        %05o -> %lf", divisor, div);
-//    double quo = f / div;
-//    uint16_t r1, r2;
-//    r1 = ftob(quo, &r2);
-    fprintf(logFile, "\n---------------------\n/ %05o %05o", ra, rl); //, quo);
-    fprintf(logFile, "\n");
-}
-
-void test1st(void)
-{
-    __uint16_t x1, x2;
-    bool of;
-/*    testAdd(002000, 006000);
-    testAdd(022000, 026000);
-    testAdd(074000, 070000);
-    testAdd(054000, 050000);
-    testAdd(14908, 8265);
-    testAdd(037777, 040000);
-    testAdd(040000, 037777);
-    testAdd(037777, 000001);
-    testAdd(000001, 037777);
-    testAdd(040000, 040000);
-*/
-    SimulateDV(017777, 040000, 020000);
-    SimulateDV(017777, 040000, 057777);
-    SimulateDV(060000, 037777, 020000);
-    SimulateDV(060000, 037777, 057777);
-    SimulateDV(017777, 037777, 020000);
-    SimulateDV(037776, 000000, 037776);
-    SimulateDV(000000, 077777, 000000);
-    SimulateDV(000000, 077777, 077777);
-    SimulateDV(077777, 000000, 000000);
-    SimulateDV(077777, 077777, 077777);
-}
-#endif
-
-void memTest(CMemory *mem, uint16_t a0, uint16_t a1, uint8_t eb, uint8_t fb, uint8_t feb)
-{
-    uint16_t    addr0, addr1;
-    mem->setEB(eb<<EB_SHIFT);
-    mem->setFB(fb<<FB_SHIFT);
-    mem->setFEB(feb);
-    addr0 = mem->addr2mem(a0);
-    addr1 = mem->addr2mem(a1);
-
-    printf("%05o-%05o\t%02o\t%02o\t%o\t%04o-%04o\n", addr0, addr1, eb, fb, feb, a0, a1);
-}
-void doMemTest(CMemory *mem)
-{
-    printf("Memory test!\n");
-        printf("Erasable fixed\n");
-        printf("Pseudo address\tEBANK\tFBANK\tFEB\tS-Reg value\n");
-        for(uint8_t e=0; e<8; e++) {
-            memTest(mem, 00000, 01377, e, 0, 0);
-        }
-        printf("\nErasable switched\n");
-        printf("Pseudo address\tEBANK\tFBANK\tFEB\tS-Reg value\n");
-        for(uint8_t e=0; e<8; e++) {
-            memTest(mem, 01400, 01777, e, 0, 0);
-        }
-        printf("\nFixed un-switched\n");
-        printf("Pseudo address\tEBANK\tFBANK\tFEB\tS-Reg value\n");
-        for(uint8_t e=0; e<8; e++) {
-            memTest(mem, 04000, 07777, e, 0, 0);
-        }
-        printf("\nFixed switched-switched (superbank 0)\n");
-        printf("Pseudo address\tEBANK\tFBANK\tFEB\tS-Reg value\n");
-        for(uint8_t f=0; f<040; f++) {
-            memTest(mem, 02000, 03777, 0, f, 0);
-        }
-        printf("\nFixed switched-switched (superbank 1)\n");
-        printf("Pseudo address\tEBANK\tFBANK\tFEB\tS-Reg value\n");
-        for(uint8_t f=0; f<034; f++) {
-            memTest(mem, 02000, 03777, 0, f, 1);
-        }
-}
-
-typedef struct {
-    uint16_t a;
-    uint16_t l;
-    uint16_t d;
-    uint16_t ra;
-    uint16_t rl;
-} Div_t;
-
-Div_t dTest[] = {
-    { 017777, 040000, 020000, 037774, 000001 },
-    { 017777, 040000, 057777, 040003, 000001 },
-    { 060000, 037777, 020000, 040003, 077776 },
-    { 060000, 037777, 057777, 037774, 077776 },
-    { 017777, 037777, 020000, 037777, 017777 },
-    { 037776, 000000, 037776, 037777, 037776 },
-    { 000000, 077777, 000000, 040000, 077777 },
-    { 000000, 077777, 077777, 037777, 077777 },
-    { 077777, 000000, 000000, 037777, 000000 },
-    { 077777, 000000, 077777, 040000, 000000 },
-    { 077777, 020000, 037776, 040000, 000000 }
-};
-
-
-void doDivTest(CCpu *cpu)
-{
-    printf("Division test!\n");
-    Div_t *dt = dTest;
-    for( int n=0; n < sizeof(dTest)/sizeof(Div_t); n++, dt++)
-        cpu->divTest(dt->a,dt->l,dt->d);
-}
 
 map<uint16_t,char*> symTab;
 
@@ -352,24 +52,21 @@ void updateScreen(WINDOW *wnd, CCpu *cpu, bool bRun)
             mvwprintw(wnd,DIS_LINES+n,10,"%s           ", cpu->disasm(n-1));
     }
     const char *lbl = cpu->getLabel(cpu->getAbsPC());
-    //map<uint16_t, char*>::iterator it;
-    //it = symTab.find(cpu->getAbsPC());
-    //if( it != symTab.end() ) {
     if( lbl ) {
         if( bRun )
             mvwprintw(wnd,DIS_LINES+1,0,"          ");
         else
-            mvwprintw(wnd,DIS_LINES+1,0,"%s ", lbl ); //it->second);
+            mvwprintw(wnd,DIS_LINES+1,0,"%s ", lbl );
     }
     if( bRun )
         mvwprintw(wnd,CLK_LINE,0,"Clk: -----\n");
     else
         mvwprintw(wnd,CLK_LINE,0,"Clk: %5d\n", cpu->getClock());
-    refresh();			    /* Print it on to the real screen */
+    refresh();			    // Print it on to the real screen 
     _bRun = bRun;
 }
 
-void readSymbols(char *sym)
+void readSymbols(const char *sym)
 {
     FILE *fs = fopen(sym,"r");
     int idx = 0x409;
@@ -380,26 +77,17 @@ void readSymbols(char *sym)
         idx += 15;
         fseek(fs, idx, SEEK_SET);
         fread(&addr, 2, 1, fs);
-        // printf("%04X ", addr);
         if( addr < 04000 ) {
         } else {
             symTab[addr] = strdup(buf);
-#if 0
-            if( addr >= 04000 && addr < 010000 )
-                printf("%s:    %05o\n", buf, addr);
-            else {
-                uint8_t blk = (addr - 010000) / FIXED_BLK_SIZE;
-                printf("%s: %02o %05o\n", buf, blk, (addr % FIXED_BLK_SIZE) + FIXED_BLK_SIZE);
-            }
-#endif
         }
         idx += 292-15;
         fseek(fs, idx, SEEK_SET);
     }
-    map<uint16_t, char*>::iterator it;
-    for(it=symTab.begin(); it!=symTab.end(); ++it) {
-        printf("%05o -> %s\n", it->first, it->second);
-    }
+    //map<uint16_t, char*>::iterator it;
+    //for(it=symTab.begin(); it!=symTab.end(); ++it) {
+    //    printf("%06o -> %s\n", it->first, it->second);
+    //}
 }
 
 WINDOW *myWindow = NULL;
@@ -409,22 +97,20 @@ void runAgc(bool bRS)
     bRunning = bRS;
     cpu.run(bRunning);
     nodelay(myWindow, bRunning);
+    curs_set(bRS ? 0 : 1);
 }
 
 void startAgc(void)
 {
     runAgc(true);
-    curs_set(0);
 }
 void stopAgc(void)
 {
     runAgc(false);
-    curs_set(1);
 }
 
 int getOctValue(const char *msg, int row)
 {
-    //char mesg[]="Breakpoint address:";
     char buf[80];
     int br = 0;
     mvwprintw(myWindow,row,0,"%s", msg);
@@ -433,23 +119,41 @@ int getOctValue(const char *msg, int row)
     return br;
 }
 
+void help(char *pgm)
+{
+  printf("\nUsage\n=================\n");
+  printf("%s [opt] bin-file [sym-file]\n\n", pgm);
+  printf("Options:\n");
+  printf(" -? --help    -- shows this help information\n");
+  printf(" -d --debug   -- added debug output to consol\n");
+  printf(" -r --run     -- include all RUN_TEST data in the output\n");
+  printf(" -t --test    -- run a built in test\n");
+  printf(" -l --log     -- enable logging\n");
+  printf(" -x --extra   -- enable extra logging\n\n");
+  printf("If 'out-file' is not given, then output is save in file 'output.json'\n\n"); 
+}
+
 int main(int argc, char *argv[])
 {
-    logFile = fopen("agc.log", "w");
-#ifdef DO_TEST
-    test1st();
-#else
+    argh::parser cmdl(argv);
+  
+    if( argc == 1 || cmdl[{ "-?", "--help" }]) {
+      help(argv[0]);
+      exit(-1);
+    }
+  
+    printf("agc - Apollo AGC simulator - v0.1beta\n");
+    printf("=======================================\n\n");
+  
+//    if (cmdl[{ "-d", "--debug" }])
+//      bDebug = true;
 
-//#define MEMORY_TEST
-#ifdef MEMORY_TEST
-    doMemTest(cpu.getMem());
-    return 0;
-#endif
-//#define DIV_TEST
-#ifdef DIV_TEST
-    doDivTest(&cpu);
-    return 0;
-#endif
+    if (cmdl[{ "-l", "--log" }]) {
+        bFileLogging = true;
+        if (cmdl[{ "-x", "--extra" }])
+            bExtraLogging = true;
+    }
+    logFile = fopen("agc.log", "w");
 
 struct itimerval timer;
 
@@ -471,16 +175,18 @@ struct itimerval timer;
     cpu.readCore(argv[1]);
     uint16_t brAddr = 0;
 
-    if( argc == 3 ) {
+    if( cmdl.size() > 2 ) {
         fprintf(logFile,"Read symbols ...\n");
-        readSymbols(argv[argc-1]);
-//        return -1;
-//        sscanf(argv[argc-1], "%o", &n);
-//        brAddr = n;
+        readSymbols(cmdl(2).str().c_str());
     }
 
     fprintf(logFile,"Starting!\n");
     fflush(logFile);
+
+    if (cmdl[{ "-t", "--test" }]) {
+        testCpu();
+        return 0;
+    }
 
     myWindow = initscr();			/* Start curses mode 		  */
     noecho();
@@ -585,6 +291,5 @@ struct itimerval timer;
     dumpLog();
     cpu.memDump();
 
-#endif
 	return 0;
 }

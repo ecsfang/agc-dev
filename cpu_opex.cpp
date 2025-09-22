@@ -1,90 +1,69 @@
 #include <stdio.h>
 #include "cpu.h"
 
-#define IS_L_OR_Q(x) (x == REG_L || x == REG_Q)
+//#define IS_L_OR_Q(x) (x == REG_L || x == REG_Q)
+#define WRITE_IO    001000
 int CCpu::op0ex(void)
 {
     int ret = -1;
     __uint16_t kc = opc & MASK_IO_ADDRESS;
     __uint16_t io = mem.readIO(kc);
     __uint16_t a = mem.getA();
+    __uint16_t xio = 0;
     switch (opc & 077000) {
     case 000000:    // READ
-        if( IS_L_OR_Q(kc) )
-            setA(io);
-        else
-            setA(SignExtend(io));
+        xio = kc < REG16 ? io : SignExtend(io);
+        setA(xio);
         if(bFileLogging)
-            fprintf(logFile," I/O READ %03o <-- %05o\n", kc, io);
+            fprintf(logFile," I/O READ %03o <-- %05o\n", kc, xio);
         ret = 0;
         break;
     case 001000:    // WRITE
-        if(bFileLogging)
-            fprintf(logFile," I/O WRITE %03o --> %05o\n", kc, a);
-        if( IS_L_OR_Q(kc) )
+        if( kc < REG16 )
             mem.write12(kc, a);
         else
             mem.writeIO(kc, OverflowCorrected(a));
+        // Bit 15 in IO:013 enables/disables the counting of TIME6
         if( kc == 013 )
             bTime6Enabled = (a & BIT_15) ? true : false;
+        if(bFileLogging)
+            fprintf(logFile," I/O WRITE %03o --> %05o\n", kc, a);
         ret = 0;
         break;
     case 002000:    // RAND
-        if( IS_L_OR_Q(kc) )
-            setA(a & io);
-        else
-            setA(SignExtend(OverflowCorrected(a) & io));
-        if(bFileLogging)
-            fprintf(logFile," I/O RAND %03o <-- %05o (%05o & %05o)\n", kc, a&io, a, io);
-        ret = 0;
-        break;
     case 003000:    // WAND
-        {
-            uint16_t xio = a & io;
-            if( IS_L_OR_Q(kc) ) {
-                setA(xio);
-            } else {
-                xio = OverflowCorrected(a) & io;
-                setA(SignExtend(xio));
-            }
+        xio = kc < REG16 ? (a & io) : SignExtend(OverflowCorrected(a) & io);
+        setA(xio);
+        if( opc & WRITE_IO )
             mem.writeIO(kc, xio);
-            if(bFileLogging)
-                fprintf(logFile," I/O WAND %03o --> %05o (%05o & %05o)\n", kc, mem.getA(), a, io);
+        if(bFileLogging) {
+            if( opc & WRITE_IO )
+                fprintf(logFile," I/O WAND %03o --> %05o (%05o & %05o)\n", kc, xio, a, io);
+            else
+                fprintf(logFile," I/O RAND %03o <-- %05o (%05o & %05o)\n", kc, xio, a, io);
         }
         ret = 0;
         break;
     case 004000:    // ROR
-        if( IS_L_OR_Q(kc) )
-            setA(a | io);
-        else
-            setA(SignExtend(OverflowCorrected(a) | io));
-        if(bFileLogging)
-            fprintf(logFile," I/O ROR %03o <-- %05o (%05o | %05o)\n", kc, mem.getA(), a, io);
-        ret = 0;
-        break;
     case 005000:    // WOR
-        {
-            uint16_t xio = a | io;
-            if( IS_L_OR_Q(kc) ) {
-                setA(xio);
-            } else {
-                xio = OverflowCorrected(a) | io;
-                setA(SignExtend(xio));
-            }
+        xio = kc < REG16 ? (a | io) : SignExtend(OverflowCorrected(a) | io);
+        setA(xio);
+        if( opc & WRITE_IO )
             mem.writeIO(kc, xio);
-            if(bFileLogging)
-                fprintf(logFile," I/O WOR %03o --> %05o (%05o | %05o)\n", kc, mem.getA(), a, io);
+        if(bFileLogging) {
+            if( opc & WRITE_IO )
+                fprintf(logFile," I/O WOR %03o --> %05o (%05o | %05o)\n", kc, xio, a, io);
+            else
+                fprintf(logFile," I/O ROR %03o <-- %05o (%05o | %05o)\n", kc, xio, a, io);
         }
         ret = 0;
         break;
     case 006000:    // RXOR
-        if( IS_L_OR_Q(kc) )
-            setA(a ^ io);
-        else
-            setA(SignExtend(OverflowCorrected(a) ^ io));
+        xio = kc < REG16 ? (a ^ io) : SignExtend(OverflowCorrected(a) ^ io);
+        setA(xio);
         ret = 0;
         if(bFileLogging)
-            fprintf(logFile," I/O RXOR %03o <-- %05o (%05o ^ %05o)\n", kc, mem.getA(), a, io);
+            fprintf(logFile," I/O RXOR %03o <-- %05o (%05o ^ %05o)\n", kc, xio, a, io);
         break;
     case 007000:    // EDRUPT
         if(bFileLogging)
@@ -163,7 +142,7 @@ int CCpu::op1ex(void)
             // Fetch the values;
             AbsK = AbsSP(OverflowCorrected(Div16));
 
-            if (AbsA > AbsK || (AbsA == AbsK && AbsL != POS_ZERO) || ValueOverflowed(Div16) != POS_ZERO)
+            if (AbsA > AbsK || (AbsA == AbsK && AbsL != POS_ZERO) || IsValueOverflowed(Div16))
             {
                 // The divisor is smaller than the dividend, or the divisor has
                 // overflow. In both cases, we fall back on a slower simulation
@@ -268,14 +247,6 @@ int CCpu::op2ex(void)
     switch (qc) {
     case 00:
         // MSU - Modular subtraction
-        /*        a = mem.getA();
-        x = mem.read12(k10);
-        mem.write(k10,x);   // Re-write k
-        a = a-x;
-        mem.setA(a);
-        bOF = false;
-        ret = 0;
-*/
         {
             unsigned ui, uj;
             int diff;
@@ -293,18 +264,18 @@ int CCpu::op2ex(void)
             diff = ui + uj + 1; // Two's complement subtraction -- add the complement plus one
             // The AGC sign-extends the result from A15 to A16, then checks A16 to see if
             // one needs to be subtracted. We'll go in the opposite order, which also works
-            if (diff & 040000)
+            if (diff & S1_MASK)
             {
-                diff |= 0100000; // Sign-extend A15 into A16
+                diff |= S2_MASK; // Sign-extend A15 into A16
                 diff--;          // Subtract one from the result
             }
             if (k10 == REG_Q)
-                mem.setA(MASK_16_BITS & diff);
+                diff &= MASK_16_BITS;
             else
             {
-                uint16_t Operand16 = (MASK_15_BITS & diff);
-                mem.setA(SignExtend(Operand16));
+                diff = SIGN_EXTEND(diff);
             }
+            mem.setA(diff);
             if (IS_EDIT_REG(k10))
                 mem.update(k10); // Update (K)!
         }
@@ -331,11 +302,7 @@ int CCpu::op2ex(void)
     case 02:
         // AUG
         x = mem.read12ex(k10);
-        if( IS_POS(x) )
-            x = AddSP16(x, POS_ONE);
-        else
-            x = AddSP16(x, SignExtend(NEG_ONE));
-        bOF |= ValueOverflowed(x) != POS_ZERO;
+        x = add1st(x, SignExtend(IS_POS(x) ? POS_ONE : NEG_ONE));
         mem.write12ex(k10,x);
         if( bOF && k10 < REG_TIME6 ) {
             chkInterrupt(k10);
@@ -346,10 +313,9 @@ int CCpu::op2ex(void)
         // DIM
         x = mem.read12ex(k10);
         if( IS_POS(x) && x != POS_ZERO )
-            x = AddSP16(x, SignExtend(NEG_ONE));
+            x = add1st(x, SignExtend(NEG_ONE));
         else if( IS_NEG(x) && (x&MASK_15_BITS) != NEG_ZERO )
-            x = AddSP16(x, POS_ONE);
-        bOF |= ValueOverflowed(x) != POS_ZERO;
+            x = add1st(x, POS_ONE);
         mem.write12ex(k10,x);
         break;
     }
@@ -371,8 +337,8 @@ int CCpu::op3ex(void)
         break;
     case REG_L: // 30002 [0,1] = [1,2]
         // DCA L - Overlapping memory ... L is written before reading to A
-        setL(k2);
-        setL(SignExtend(OverflowCorrected(mem.getL())));
+        //setL(k2);
+        setL(SignExtend(OverflowCorrected(k2))); //mem.getL())));
         setA(mem.getL());
         break;
     case REG_Q: // 30003 [0,1] = [2,3]
@@ -384,11 +350,10 @@ int CCpu::op3ex(void)
         setA(SignExtend(k1));
         setL(SignExtend(k2));
     }
-//    setL(SignExtend(OverflowCorrected(mem.getL())));
     if( IS_EDIT_REG(k12-1) )
-        mem.update(k12-1); // Update (K)!
+        mem.update(k12-1);  // Update (K-1)!
     if( IS_EDIT_REG(k12) )
-        mem.update(k12); // Update (K)!
+        mem.update(k12);    // Update (K)!
     bOF = false;
     mct = 3;
     return 0;
@@ -409,7 +374,7 @@ int CCpu::op4ex(void)
     case REG_L:
         // DCS L - Overlapping memory ... L is written before reading to A
         setA(mem.getQ());
-        setL((~k2));// & NEG_ZERO);
+        setL((~k2));
         break;
     case REG_Q:
         // DCS Q - Move Q into A with all bits intact

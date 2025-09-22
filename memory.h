@@ -35,10 +35,12 @@ extern bool bFileLogging;
 
 #define ERR_ADDR    0xFFFF
 
-#define POS_ZERO     000000
-#define NEG_ZERO     077777
-#define POS_ONE      000001
-#define NEG_ONE      077776
+#define POS_ZERO            000000
+#define NEG_ZERO            077777
+#define POS_ONE             000001
+#define NEG_ONE             (MASK_15_BITS & ~POS_ONE)
+#define MAX_POS             MASK_14_BITS
+#define MAX_NEG             (MASK_15_BITS & ~MAX_POS)
 
 #define BIT_1               (1<<0)
 #define BIT_2               (1<<1)
@@ -58,23 +60,23 @@ extern bool bFileLogging;
 #define BIT_16              (1<<15)
 #define BIT_17              (1<<16)
 
-#define S1_MASK             BIT_15              // 040000
-#define S2_MASK             BIT_16              // 100000
+#define S1_MASK             BIT_15              // 0040000
+#define S2_MASK             (S1_MASK<<1)        // 0100000
+#define OVF_MASK            (S2_MASK<<1)        // 0200000
+#define OF_MASK             (S1_MASK|S2_MASK)   // 0140000
 
-#define OF_MASK             (S1_MASK|S2_MASK)   // 140000
 #define POS_OF              S1_MASK
 #define NEG_OF              S2_MASK
 #define IS_OF(x)            ((x) & OF_MASK)
-#define OVF_MASK            BIT_17
 #define MANTISSA_MASK       (MASK_15_BITS>>1)
 
-#define IS_POS(x) (((x)&S1_MASK) == 0)
-#define IS_NEG(x) (((x)&S1_MASK) != 0)
-#define IS_NEG16(x) (((x)&S2_MASK) != 0)
+#define IS_POS(x)           (((x)&S1_MASK) == 0)
+#define IS_NEG(x)           (((x)&S1_MASK) != 0)
+#define IS_NEG16(x)         (((x)&S2_MASK) != 0)
 
-#define ERASABLE_SIZE   (010 * ERASABLE_BLK_SIZE)
-#define FIXED_SIZE      (042 * FIXED_BLK_SIZE)
-#define SUPER_SIZE      (004 * FIXED_BLK_SIZE)
+#define ERASABLE_SIZE       (010 * ERASABLE_BLK_SIZE)
+#define FIXED_SIZE          (042 * FIXED_BLK_SIZE)
+#define SUPER_SIZE          (004 * FIXED_BLK_SIZE)
 
 //#define TOTAL_SIZE  (8 * ERASABLE_BLK_SIZE + 38 * FIXED_BLK_SIZE)
 #define TOTAL_SIZE  (ERASABLE_SIZE + FIXED_SIZE + SUPER_SIZE)
@@ -129,9 +131,18 @@ extern bool bFileLogging;
 uint16_t DABS(uint16_t x);
 uint16_t DABS16(uint16_t x);
 int16_t ValueOverflowed (int16_t Value);
+bool IsValueOverflowed(int16_t word);
+#if 0
 int16_t OverflowCorrected (int16_t Value);
 int SignExtend (int Word);
+#else
+// Replace S1 with the S2 bit
+#define OverflowCorrected(w) ((int16_t)OVF_CORRECTION(w))
 
+// Sign-extend a 15-bit SP value so that it can go into the 16-bit (plus parity)
+// accumulator.
+#define SignExtend(w) ((int)(SIGN_EXTEND(((int)w))))
+#endif
 /**
 #  ENGINE ON BIT 13 OF CHANNEL 11
 #  0 MEANS OFF
@@ -290,6 +301,16 @@ public:
         return read12((mem.Z+offs) & MASK_12B_ADDRESS);
     }
     void dump(void);
+    void setPC(__uint16_t blk, __uint16_t pc) {
+        if( blk >= 040 ) {
+            blk -= 010;
+            setFEB(1);
+        } else {
+            setFEB(0);
+        }
+        setFB(blk << FB_SHIFT);
+        setZ(pc);
+    }
     void setZ(__uint16_t pc) {
         mem.Z = pc & MASK_12_BITS;
     }
